@@ -10,7 +10,7 @@ from comet_ml import start
 # Local Imports
 import config
 import models
-import registry
+import registry_module
 # We don't need preprocessing here because we pass data from the notebook
 from training_engine import fit 
 
@@ -73,7 +73,7 @@ def get_criterion_from_name(criterion_name):
         return nn.CrossEntropyLoss()
     
 
-def get_optimizer_and_scaler(optimizer_name, model, learning_rate, l2_lambda, device):
+def get_optimizer_and_scaler(optimizer_name, model, learning_rate, l2_lambda, device_obj):
     # Define optimizer with L2 regularization
     if optimizer_name == "adamw":
         optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate, weight_decay=l2_lambda)
@@ -82,7 +82,7 @@ def get_optimizer_and_scaler(optimizer_name, model, learning_rate, l2_lambda, de
         optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate, weight_decay=l2_lambda)
 
     # Enable mixed precision training for GPU acceleration
-    scaler = torch.amp.GradScaler(enabled=(device.type == 'cuda'))
+    scaler = torch.amp.GradScaler(enabled=(device_obj.type == 'cuda'))
     return optimizer, scaler
 
 
@@ -90,7 +90,7 @@ def get_optimizer_and_scaler(optimizer_name, model, learning_rate, l2_lambda, de
 # Main Function
 # -----------------------------
 
-def start_training2(model_name="CNN", model_params=None, training_params=None, device="cuda", train_loader=None, val_loader=None, data_input_shape=None):
+def start_training2(model_name="CNN", model_params=None, training_params=None, device=None, train_loader=None, val_loader=None, data_input_shape=None):
     """
     Args:
         model_name (str): "CNN" or "EfficientNet"
@@ -168,7 +168,7 @@ def start_training2(model_name="CNN", model_params=None, training_params=None, d
     # Get criterion
     criterion = get_criterion_from_name(current_train_cfg['criterion_name'])  
 
-    optimizer, scaler = get_optimizer_and_scaler(current_train_cfg['optimizer_name'], model, current_train_cfg['learning_rate'], current_train_cfg['l2_lambda'], device)
+    optimizer, scaler = get_optimizer_and_scaler(current_train_cfg['optimizer_name'], model, current_train_cfg['learning_rate'], current_train_cfg['l2_lambda'], device_obj)
 
     # Get data loader
     train_loader = train_loader #TODO: take it from preprocessing
@@ -193,7 +193,7 @@ def start_training2(model_name="CNN", model_params=None, training_params=None, d
         criterion=criterion,
         optimizer=optimizer, 
         scaler=scaler,
-        device=device, 
+        device=device_obj, 
         writer=writer,
         l1_lambda=current_train_cfg['l1_lambda'],
         l2_lambda=0, #already applied in AdamW optimizer, don't change!
