@@ -46,10 +46,10 @@ class VanillaCNNBlock(nn.Module):
 # Convolutional Neural Network architecture for CIFAR10 classification
 #N.B. If use_stride is true, we apply downsapling with stride, otherwise we downsample with pooling
 class CNN(nn.Module):
-    def __init__(self, input_shape=(3,32,32), num_classes=10, dropout_rate=config.DROPOUT_RATE_CLASSIFIER_HEAD,
-                 num_blocks=config.NUM_BLOCKS, convs_per_block=config.CONVS_PER_BLOCK,
-                 use_stride=config.USE_STRIDE, stride_value=config.STRIDE_VALUE, padding_size=config.PADDING_SIZE, pool_size=config.POOL_SIZE,
-                 initial_channels=config.INITIAL_CHANNELS, channel_multiplier=config.CHANNEL_MULTIPLIER):
+    def __init__(self, input_shape=(3,32,32), num_classes=10, dropout_rate=0.2,
+                 num_blocks=2, convs_per_block=1,
+                 use_stride=False stride_value=2, padding_size=1, pool_size=2,
+                 initial_channels=32, channel_multiplier=2):
         super().__init__()
 
         # Build convolutional blocks

@@ -1,90 +1,3 @@
-# -----------------------------
-# Import libraries
-# -----------------------------
-
-# Set seed for reproducibility
-SEED = 42
-
-# Import necessary libraries
-import os
-
-# Set environment variables before importing modules
-os.environ['PYTHONHASHSEED'] = str(SEED)
-os.environ['MPLCONFIGDIR'] = os.getcwd() + '/configs/'
-
-# Suppress warnings
-import warnings
-warnings.simplefilter(action='ignore', category=FutureWarning)
-warnings.simplefilter(action='ignore', category=Warning)
-
-# Import necessary modules
-import logging
-import random
-import numpy as np
-
-# Set seeds for random number generators in NumPy and Python
-np.random.seed(SEED)
-random.seed(SEED)
-
-# Import PyTorch
-import torch
-torch.manual_seed(SEED)
-from torch import nn
-from torchsummary import summary
-from torch.utils.tensorboard import SummaryWriter
-import torchvision
-from torchvision import datasets, transforms
-from torch.utils.data import TensorDataset, DataLoader
-
-# Configurazione di TensorBoard e directory
-logs_dir = "tensorboard"
-!pkill -f tensorboard
-%load_ext tensorboard
-!mkdir -p models
-
-if torch.cuda.is_available():
-    device = torch.device("cuda")
-    torch.cuda.manual_seed_all(SEED)
-    torch.backends.cudnn.benchmark = True
-else:
-    device = torch.device("cpu")
-
-print(f"PyTorch version: {torch.__version__}")
-print(f"Device: {device}")
-
-# Import other libraries
-import copy
-import shutil
-from itertools import product
-import pandas as pd
-import seaborn as sns
-import matplotlib.pyplot as plt
-from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, confusion_matrix
-from sklearn.model_selection import train_test_split
-from PIL import Image
-import matplotlib.gridspec as gridspec
-
-# Configure plot display settings
-sns.set(font_scale=1.4)
-sns.set_style('white')
-plt.rc('font', size=14)
-
-
-# -----------------------------
-# Custom imports
-# -----------------------------
-import config
-import models
-from comet_ml import start #for logging
-
-
-
-
-
-
-
-
-
 
 # -----------------------------
 # Training functions
@@ -208,7 +121,7 @@ def validate_one_epoch(model, val_loader, criterion, device):
 
 def fit(model, train_loader, val_loader, epochs, criterion, optimizer, scaler, device,
         l1_lambda=0, l2_lambda=0, patience=0, evaluation_metric="val_f1", mode='max',
-        restore_best_weights=True, writer=None, verbose=10, experiment_name=""):
+        restore_best_weights=True, writer=None, verbose=10, experiment_name="", comet_experiment=None):
     """
     Train the neural network model on the training data and validate on the validation data.
 
@@ -230,6 +143,7 @@ def fit(model, train_loader, val_loader, epochs, criterion, optimizer, scaler, d
         writer (SummaryWriter, optional): TensorBoard SummaryWriter object for logging (default: None)
         verbose (int, optional): Frequency of printing training progress (default: 10)
         experiment_name (str, optional): Experiment name for saving models (default: "")
+        comet_experiment : comet experiment variable for logging
 
     Returns:
         tuple: (model, training_history) - Trained model and metrics history
@@ -278,7 +192,7 @@ def fit(model, train_loader, val_loader, epochs, criterion, optimizer, scaler, d
 
         # log to comet
         metrics={"train_loss": train_loss, "train_f1": train_f1, "val_loss":val_loss, "val_f1": val_f1 }
-        experiment.log_metrics(metrics, step=epoch, epoch=epoch)
+        comet_experiment.log_metrics(metrics, step=epoch, epoch=epoch)
 
 
 
@@ -318,9 +232,9 @@ def fit(model, train_loader, val_loader, epochs, criterion, optimizer, scaler, d
     if writer is not None:
         writer.close()
 
-    experiment.log_model(experiment, model_name="test1")
+    comet_experiment.log_model(comet_experiment, model_name="test1")
 
-    experiment.end()
+    comet_experiment.end()
     return model, training_history
 
 
@@ -364,102 +278,3 @@ def log_metrics_to_tensorboard(writer, epoch, train_loss, train_f1, val_loss, va
                     if param.grad is not None and torch.isfinite(param.grad).all():
                         writer.add_histogram(f'{name}/gradients', param.grad.data, epoch)
 
-
-
-
-# -----------------------------
-# Custom functions
-# -----------------------------
-
-def initialize_training():
-    # Initialize best model tracking variables
-    best_model = None
-    best_performance = float('-inf')
-
-def instantiate_model(name):
-    if name == "CNN":
-        # Instantiate CNN model and move to computing device (CPU/GPU)
-        model = models.CNN(
-            config.input_shape,
-            config.num_classes,
-            num_blocks=config.NUM_BLOCKS,
-            convs_per_block=config.CONVS_PER_BLOCK,
-            use_stride=config.USE_STRIDE,
-            stride_value=config.STRIDE_VALUE,
-            padding_size=config.PADDING_SIZE,
-            pool_size=config.POOL_SIZE,
-            initial_channels=config.INITIAL_CHANNELS,
-            channel_multiplier=config.CHANNEL_MULTIPLIER
-            ).to(device)
-
-    elif name == "EfficientNet":
-        # Create and display the DenseNet model
-        model = models.DenseNetModel(config.input_shape, config.output_shape, config.filters, config.kernel_size, config.stack, config.blocks).to(device)
-
-
-    summary(model, input_size=config.input_shape)
-    model_graph = draw_graph(model, input_size=(config.BATCH_SIZE,)+config.input_shape, expand_nested=True, depth=5)
-    model_graph.visual_graph
-
-
-def get_criterion_from_name(name):
-    if config.LOSS_FN == name:
-        criterion = nn.CrossEntropyLoss()
-    return criterion
-
-def get_optimizer_and_scaler_from_name(name, model, learning_rate, l2_lambda):
-    # Define optimizer with L2 regularization
-    optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate, weight_decay=l2_lambda)
-
-    # Enable mixed precision training for GPU acceleration
-    scaler = torch.amp.GradScaler(enabled=(device.type == 'cuda'))
-    return optimizer, scaler
-
-def start_training(model_name=config.MODEL_NAME, train_loader=config.train_loader, val_loader=config.val_loader, epochs=config.epochs, criterion_name=config.CRITERION_NAME, optimizer_name=config.OPTIMIZER_NAME, scaler=config.scaler, device=device, writer=config.writer, learning_rate = config.LEARNING_RATE, l1_lambda = config.L1_LAMBDA ,l2_lambda=config.L2_LAMBDA, verbose=config.VERBOSE, experiment_name="cnn", patience=config.PATIENCE):
-#    %%time   Do we need it?
-
-    model = instantiate_model(model_name)
-    criterion = get_criterion_from_name(criterion_name)
-    optimizer, scaler = get_optimizer_and_scaler_from_name(optimizer_name, learning_rate, l2_lambda)
-
-
-    # Train model and track training history
-    model, training_history = fit(
-        model=model,
-        train_loader=train_loader,
-        val_loader=val_loader,
-        epochs=epochs,
-        criterion=criterion,
-        optimizer=optimizer, 
-        scaler=scaler,
-        device=device, 
-        writer=writer,
-        l1_lambda=l1_lambda,
-        l2_lambda=0,
-        verbose=verbose,
-        experiment_name=experiment_name, #TODO:check names
-        patience=patience
-        )
-
-    # Update best model if current performance is superior
-    if training_history['val_f1'][-1] > best_performance:
-        best_model = model
-        best_performance = training_history['val_f1'][-1]
-
-
-    #Initialize Comet logging
-    experiment = start(
-      api_key="nhvfD4vUpZNMoJQ3dEjOwIeua",
-      project_name="test",
-      workspace="asarraa"
-    )
-
-    hyper_params = {
-      "learning_rate": learning_rate,
-      "batch_size": batch_size,
-      "epochs": epochs,
-      "model": model,
-
-    }
-
-    experiment.log_parameters(hyper_params)
