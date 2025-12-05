@@ -120,7 +120,11 @@ def main():
     
     input_dir = Path("./data/train_data")
     output_dir = Path("./data/processed")
+    labels_dir = Path("./data")
 
+    labels = pd.read_csv(labels_dir + "/train_labels.csv")
+    
+    
     # Creazione struttura cartelle output
     final_img_dir = output_dir / "images"
     final_mask_dir = output_dir / "masks"
@@ -195,6 +199,7 @@ def main():
                 cv2.imwrite(str(discard_dir / img_path.name), img_clean)
                 cv2.imwrite(str(discard_dir / mask_name), mask_clean)
                 stats["SHREK"] += 1
+                labels.droprows(labels[labels['sample_index'] == img_path.name].index, inplace=True)
                 print(f"❌ {img_path.name} -> SHREK (Scartato)")
             else:
                 # SAFE -> Salva nelle cartelle finali divise
@@ -212,7 +217,9 @@ def main():
             print(f"Processati {i}/{len(img_files)}...", end="\r")
 
     
-
+    # Salva labels in un file csv in /processed
+    labels.to_csv(output_dir / "train_labels_processed.csv", index=False)
+    
     print("\n" + "="*50)
     print("ELABORAZIONE COMPLETATA")
     print(f"📁 Output: {output_dir}")
