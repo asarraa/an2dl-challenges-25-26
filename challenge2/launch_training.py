@@ -147,12 +147,6 @@ def start_training2(model_name="CNN", model_params=None, training_params=None, d
 
     data_input_shape =  data_input_shape #TODO: take it from preprocessing: preprocessing.get_data_input_shape()
 
-    # Set up TensorBoard logging and save model architecture
-    experiment_name = f"{model_name}_run"
-    writer = SummaryWriter(f"tensorboard/{experiment_name}")
-    x = torch.randn(1, data_input_shape[0], data_input_shape[1], data_input_shape[2]).to(device)
-    writer.add_graph(model, x)
-
 
     # -------------------------------------------------------
     # 2. INSTANTIATE (Using the merged configs)
@@ -171,6 +165,11 @@ def start_training2(model_name="CNN", model_params=None, training_params=None, d
     train_loader = train_loader #TODO: take it from preprocessing
     val_loader = val_loader  #TODO: take it from preprocessing:     preprocessing.get_data_loaders()
 
+    # Set up TensorBoard logging and save model architecture
+    experiment_name = f"{model_name}_run"
+    writer = SummaryWriter(f"tensorboard/{experiment_name}")
+    x = torch.randn(1, data_input_shape[0], data_input_shape[1], data_input_shape[2]).to(device)
+    writer.add_graph(model, x)
 
     # -------------------------------------------------------
     # 3. RUN TRAINING
