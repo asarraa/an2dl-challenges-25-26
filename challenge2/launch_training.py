@@ -4,6 +4,7 @@
 import config
 import models
 import preprocessing
+import registry
 from comet_ml import start #for logging
 from training_engine import train_one_epoch, validate_one_epoch, fit, log_metrics_to_tensorboard
 
@@ -266,7 +267,7 @@ def start_training2(model_name="CNN", model_params=None, training_params=None, d
     # -------------------------------------------------------
     
     # Initialize Registry (saves to 'experiments/' folder by default)
-    registry = ModelRegistry(base_dir="experiments")
+    registry = registry.ModelRegistry(base_dir="experiments")
     
     # Extract final metrics from history
     # We take the last value of the validation F1 and Loss
