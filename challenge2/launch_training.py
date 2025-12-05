@@ -174,11 +174,22 @@ def start_training2(model_name="CNN", model_params=None, training_params=None, d
     train_loader = train_loader #TODO: take it from preprocessing
     val_loader = val_loader  #TODO: take it from preprocessing:     preprocessing.get_data_loaders()
 
-    # Set up TensorBoard logging and save model architecture
+    # TensorBoard
     experiment_name = f"{model_name}_run"
+    writer = SummaryWriter(f"tensorboard/{experiment_name}")
+    '''
     writer = SummaryWriter(f"tensorboard/{experiment_name}")
     x = torch.randn(1, data_input_shape[0], data_input_shape[1], data_input_shape[2]).to(device_obj)
     writer.add_graph(model, x)
+    '''
+
+    try:
+        if data_input_shape is not None:
+            # Crea input dummy sullo stesso device del modello
+            x = torch.randn(1, *data_input_shape).to(device_obj)
+            writer.add_graph(model, x)
+    except Exception as e:
+        print(f"⚠️ Warning: TensorBoard Graph logging failed (skipping): {e}")
 
     # -------------------------------------------------------
     # 3. RUN TRAINING
