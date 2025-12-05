@@ -120,9 +120,9 @@ def main():
     
     input_dir = Path("./data/train_data")
     output_dir = Path("./data/processed")
-    labels_dir = Path("./data")
+    labels_dir = Path("./data/train_labels.csv")
 
-    labels = pd.read_csv(labels_dir + "/train_labels.csv")
+    labels = pd.read_csv(labels_dir)
     
     
     # Creazione struttura cartelle output
@@ -155,7 +155,6 @@ def main():
             # Assume formato: img_1234.png -> mask_1234.png
             file_stem = img_path.stem # img_1234
             suffix = img_path.suffix  # .png
-            
             # Estrae il numero (o la parte dopo img_)
             id_part = file_stem.replace("img_", "")
             mask_name = f"mask_{id_part}{suffix}"
@@ -180,7 +179,7 @@ def main():
 
             # 3. RIMOZIONE SLIME
             img_clean, mask_clean = process_slime_removal(img_bgr, mask_gray)
-
+            
             # 4. CLASSIFICAZIONE V11 (Sull'immagine pulita!)
             cls, r_tiss, r_shrek, dom = analyze_image_memory(img_clean)
 
@@ -199,7 +198,8 @@ def main():
                 cv2.imwrite(str(discard_dir / img_path.name), img_clean)
                 cv2.imwrite(str(discard_dir / mask_name), mask_clean)
                 stats["SHREK"] += 1
-                labels.droprows(labels[labels['sample_index'] == img_path.name].index, inplace=True)
+                #i want to remove the corresponding row from labels dataframe
+                labels.drop(labels[labels['sample_index'] == img_path.name].index, inplace=True)
                 print(f"❌ {img_path.name} -> SHREK (Scartato)")
             else:
                 # SAFE -> Salva nelle cartelle finali divise
