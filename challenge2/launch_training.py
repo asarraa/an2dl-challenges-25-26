@@ -89,6 +89,148 @@ def get_optimizer_and_scaler(optimizer_name, model, learning_rate, l2_lambda, de
 # -----------------------------
 # Main Function
 # -----------------------------
+def start_training(model_name="CNN", model_params=None, training_params=None, device="cuda", train_loader=None, val_loader=None, data_input_shape=None):
+    """
+    Args:
+        model_name (str): "CNN" or "EfficientNet"
+        model_params (dict): Dictionary of overrides for the model architecture.
+        training_params (dict): Dictionary of overrides for training (lr, epochs, etc).
+    """
+
+    best_model, best_performance = initialize_training()
+    
+    # -------------------------------------------------------
+    # 1. SETUP CONFIGURATION
+    # -------------------------------------------------------
+    current_train_cfg = config.TRAINING_DEFAULTS.copy()
+    if training_params:
+        current_train_cfg.update(training_params)
+
+    if model_name == "CNN":
+        current_model_cfg = config.CNN_DEFAULTS.copy()
+    elif model_name == "EfficientNet":
+        current_model_cfg = config.EFFICIENTNET_DEFAULTS.copy()
+    
+    if model_params:
+        current_model_cfg.update(model_params)
+
+    # --- FIX 1: CREA OGGETTO DEVICE SICURO ---
+    if device == "cuda" and torch.cuda.is_available():
+        device_obj = torch.device("cuda")
+    else:
+        device_obj = torch.device("cpu")
+
+    print(f"Starting {model_name} on {device_obj}...")
+    
+    # Debug info
+    train_parameters_summary = "\n".join([f"{k}: {v}" for k, v in current_train_cfg.items()])
+    print("Training Configuration:\n", train_parameters_summary)
+
+    # -------------------------------------------------------
+    # 2. INSTANTIATE & MOVE TO GPU
+    # -------------------------------------------------------
+    
+    # Crea il modello (su CPU)
+    model = instantiate_model(model_name, current_train_cfg['batch_size'], current_model_cfg, data_input_shape)        
+    
+    # --- FIX 2: SPOSTA SU GPU ORA ---
+    model = model.to(device_obj) 
+
+    # Optimizer e Criterion (usando il device object corretto)
+    criterion = get_criterion_from_name(current_train_cfg['criterion_name'])  
+    optimizer, scaler = get_optimizer_and_scaler(
+        current_train_cfg['optimizer_name'], 
+        model, 
+        current_train_cfg['learning_rate'], 
+        current_train_cfg['l2_lambda'], 
+        device_obj
+    )
+
+    # -------------------------------------------------------
+    # 3. LOGGING
+    # -------------------------------------------------------
+    comet_experiment = start(
+      api_key="nhvfD4vUpZNMoJQ3dEjOwIeua",
+      project_name="test",
+      workspace="asarraa"
+    )
+
+    hyper_params = {
+      "model": model_name,
+      **current_train_cfg,
+      **current_model_cfg
+    }
+    comet_experiment.log_parameters(hyper_params)
+
+    # TensorBoard
+    experiment_name = f"{model_name}_run"
+    writer = SummaryWriter(f"tensorboard/{experiment_name}")
+    
+    # --- FIX 3: SAFE GRAPH LOGGING ---
+    try:
+        if data_input_shape is not None:
+            # Crea input dummy sullo stesso device del modello
+            x = torch.randn(1, *data_input_shape).to(device_obj)
+            writer.add_graph(model, x)
+    except Exception as e:
+        print(f"⚠️ Warning: TensorBoard Graph logging failed (skipping): {e}")
+
+
+    # -------------------------------------------------------
+    # 4. RUN TRAINING
+    # -------------------------------------------------------
+    model, training_history = fit(
+        model=model,
+        train_loader=train_loader,
+        val_loader=val_loader,
+        epochs=current_train_cfg['epochs'],
+        criterion=criterion,
+        optimizer=optimizer, 
+        scaler=scaler,
+        device=device_obj, 
+        writer=writer,
+        l1_lambda=current_train_cfg['l1_lambda'],
+        l2_lambda=0,
+        verbose=current_train_cfg['verbose'],
+        experiment_name=experiment_name,
+        patience=current_train_cfg['patience'],
+        comet_experiment=comet_experiment
+    )
+
+    if training_history['val_f1'][-1] > best_performance:
+        best_model = model
+        best_performance = training_history['val_f1'][-1]
+
+    # -------------------------------------------------------
+    # 5. SAVE TO REGISTRY
+    # -------------------------------------------------------
+    
+    # --- FIX 4: RINOMINA VARIABILE PER EVITARE CONFLITTO ---
+    import registry as registry_module # Assicura che il modulo sia visibile
+    reg = registry_module.ModelRegistry(base_dir="experiments")
+    
+    final_metrics = {
+        "val_f1": training_history['val_f1'][-1],
+        "val_loss": training_history['val_loss'][-1],
+        "train_loss": training_history['train_loss'][-1],
+        "best_epoch_performance": max(training_history['val_f1'])
+    }
+    
+    current_model_cfg["model_name"] = model_name
+
+    exp_id = reg.save_experiment(
+        model=model,
+        optimizer=optimizer,
+        train_cfg=current_train_cfg,
+        model_cfg=current_model_cfg,
+        metrics=final_metrics
+    )
+    
+    comet_experiment.log_other("local_experiment_id", exp_id)
+    comet_experiment.end()
+    
+    return model, training_history
+
 
 def start_training2(model_name="CNN", model_params=None, training_params=None, device=None, train_loader=None, val_loader=None, data_input_shape=None):
     """
