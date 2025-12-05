@@ -118,8 +118,8 @@ def analyze_image_memory(img_bgr):
 def main():
     
     
-    input_dir = Path("../data/train_data")
-    output_dir = Path("../data/processed")
+    input_dir = Path("./data/train_data")
+    output_dir = Path("./data/processed")
 
     # Creazione struttura cartelle output
     final_img_dir = output_dir / "images"
