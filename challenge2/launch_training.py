@@ -59,8 +59,8 @@ def instantiate_model(model_name, batch_size, current_model_cfg, data_input_shap
         model = models.EfficientNetModel(config.input_shape, config.output_shape, config.filters, config.kernel_size, config.stack, config.blocks).to(device)'''
 
     summary(model, input_size=data_input_shape)
-    model_graph = draw_graph(model, input_size=(batch_size)+config.input_shape, expand_nested=True, depth=5)
-    model_graph.visual_graph
+    #model_graph = draw_graph(model, input_size=(batch_size)+config.input_shape, expand_nested=True, depth=5)
+    #model_graph.visual_graph
     return model
 
 
@@ -155,7 +155,7 @@ def start_training2(model_name="CNN", model_params=None, training_params=None, d
 
     # Instantiate Model
     model = instantiate_model(model_name, current_train_cfg['batch_size'], current_model_cfg, data_input_shape)        
-    model = model.to(current_train_cfg['device']) 
+    model = model.to(device) 
     # Get criterion
     criterion = get_criterion_from_name(current_train_cfg['criterion_name'])  
 
