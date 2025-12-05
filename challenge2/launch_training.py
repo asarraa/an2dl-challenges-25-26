@@ -1,95 +1,29 @@
-# -----------------------------
-# Custom library imports
-# -----------------------------
-import config
-import models
-import preprocessing
-import registry
-from comet_ml import start #for logging
-from training_engine import train_one_epoch, validate_one_epoch, fit, log_metrics_to_tensorboard
 
-# -----------------------------
-# Import libraries
-# -----------------------------
-
-# Set seed for reproducibility
-SEED = 42
-
-# Import necessary libraries
+# 1. IMPORTS
 import os
-
-# Set environment variables before importing modules
-os.environ['PYTHONHASHSEED'] = str(SEED)
-os.environ['MPLCONFIGDIR'] = os.getcwd() + '/configs/'
-
-# Suppress warnings
-import warnings
-warnings.simplefilter(action='ignore', category=FutureWarning)
-warnings.simplefilter(action='ignore', category=Warning)
-
-# Import necessary modules
-import logging
-import random
-import numpy as np
-
-# Set seeds for random number generators in NumPy and Python
-np.random.seed(SEED)
-random.seed(SEED)
-
-# Import PyTorch
 import torch
-torch.manual_seed(SEED)
-from torch import nn
+import torch.nn as nn
 from torchsummary import summary
 from torch.utils.tensorboard import SummaryWriter
-import torchvision
-from torchvision import datasets, transforms
-from torch.utils.data import TensorDataset, DataLoader
+from comet_ml import start
 
-# Configurazione di TensorBoard e directory
-logs_dir = "tensorboard"
-#TODO: controlla come lanciare tensorboard
-'''
-!pkill -f tensorboard
-%load_ext tensorboard
-!mkdir -p models'''
-
-
-#TODO: spostare su notebook prima della chiamata
-'''if torch.cuda.is_available():
-    device = torch.device("cuda")
-    torch.cuda.manual_seed_all(SEED)
-    torch.backends.cudnn.benchmark = True
-else:
-    device = torch.device("cpu")
-
-print(f"PyTorch version: {torch.__version__}")
-print(f"Device: {device}")
-'''
-
-# Import other libraries
-import copy
-import shutil
-from itertools import product
-import pandas as pd
-import seaborn as sns
-import matplotlib.pyplot as plt
-from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, confusion_matrix
-from sklearn.model_selection import train_test_split
-from PIL import Image
-import matplotlib.gridspec as gridspec
-
-# Configure plot display settings
-sns.set(font_scale=1.4)
-sns.set_style('white')
-plt.rc('font', size=14)
-
-
+# Local Imports
+import config
+import models
+import registry
+# We don't need preprocessing here because we pass data from the notebook
+from training_engine import fit 
 
 
 # -----------------------------
-# Custom functions
+# Helper Functions
 # -----------------------------
+
+def get_device(cfg_device):
+    if cfg_device == "cuda" and torch.cuda.is_available():
+        return torch.device("cuda")
+    return torch.device("cpu")
+
 
 def initialize_training():
     # Initialize best model tracking variables
@@ -151,7 +85,12 @@ def get_optimizer_and_scaler(optimizer_name, model, learning_rate, l2_lambda, de
     scaler = torch.amp.GradScaler(enabled=(device.type == 'cuda'))
     return optimizer, scaler
 
-def start_training2(model_name="CNN", model_params=None, training_params=None, device="cuda"):
+
+# -----------------------------
+# Main Function
+# -----------------------------
+
+def start_training2(model_name="CNN", model_params=None, training_params=None, device="cuda", train_loader=None, val_loader=None, data_input_shape=None):
     """
     Args:
         model_name (str): "CNN" or "EfficientNet"
@@ -206,10 +145,11 @@ def start_training2(model_name="CNN", model_params=None, training_params=None, d
       "model": model_name,
     }
 
-    data_input_shape = preprocessing.get_data_input_shape()
+    data_input_shape =  data_input_shape #TODO: take it from preprocessing: preprocessing.get_data_input_shape()
+
     # Set up TensorBoard logging and save model architecture
-    experiment_name = "cnn"
-    writer = SummaryWriter("./"+logs_dir+"/"+experiment_name)
+    experiment_name = f"{model_name}_run"
+    writer = SummaryWriter(f"tensorboard/{experiment_name}")
     x = torch.randn(1, data_input_shape[0], data_input_shape[1], data_input_shape[2]).to(device)
     writer.add_graph(model, x)
 
@@ -228,7 +168,8 @@ def start_training2(model_name="CNN", model_params=None, training_params=None, d
     optimizer, scaler = get_optimizer_and_scaler(current_train_cfg['optimizer_name'], model, current_train_cfg['learning_rate'], current_train_cfg['l2_lambda'], device)
 
     # Get data loader
-    train_loader, val_loader = preprocessing.get_data_loaders()
+    train_loader = train_loader #TODO: take it from preprocessing
+    val_loader = val_loader  #TODO: take it from preprocessing:     preprocessing.get_data_loaders()
 
 
     # -------------------------------------------------------
