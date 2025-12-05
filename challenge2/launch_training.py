@@ -89,7 +89,7 @@ def get_optimizer_and_scaler(optimizer_name, model, learning_rate, l2_lambda, de
 # -----------------------------
 # Main Function
 # -----------------------------
-def start_training(model_name="CNN", model_params=None, training_params=None, device="cuda", train_loader=None, val_loader=None, data_input_shape=None):
+def start_training3(model_name="CNN", model_params=None, training_params=None, device="cuda", train_loader=None, val_loader=None, data_input_shape=None):
     """
     Args:
         model_name (str): "CNN" or "EfficientNet"
@@ -232,7 +232,7 @@ def start_training(model_name="CNN", model_params=None, training_params=None, de
     return model, training_history
 
 
-def start_training2(model_name="CNN", model_params=None, training_params=None, device=None, train_loader=None, val_loader=None, data_input_shape=None):
+def start_training(model_name="CNN", model_params=None, training_params=None, device=None, train_loader=None, val_loader=None, data_input_shape=None):
     """
     Args:
         model_name (str): "CNN" or "EfficientNet"
