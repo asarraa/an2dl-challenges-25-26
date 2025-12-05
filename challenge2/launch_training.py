@@ -177,7 +177,7 @@ def start_training2(model_name="CNN", model_params=None, training_params=None, d
     # Set up TensorBoard logging and save model architecture
     experiment_name = f"{model_name}_run"
     writer = SummaryWriter(f"tensorboard/{experiment_name}")
-    x = torch.randn(1, data_input_shape[0], data_input_shape[1], data_input_shape[2]).to(device)
+    x = torch.randn(1, data_input_shape[0], data_input_shape[1], data_input_shape[2]).to(device_obj)
     writer.add_graph(model, x)
 
     # -------------------------------------------------------
