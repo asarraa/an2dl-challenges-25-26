@@ -99,6 +99,15 @@ def start_training2(model_name="CNN", model_params=None, training_params=None, d
     """
 
     best_model, best_performance = initialize_training()
+
+    # Ensure 'device' is a proper torch object, not just a string
+    if device == "cuda" and torch.cuda.is_available():
+        device_obj = torch.device("cuda")
+    else:
+        device_obj = torch.device("cpu")
+        
+    print(f"--- Starting {model_name} on {device_obj} ---")
+
     # -------------------------------------------------------
     # 1. SETUP CONFIGURATION (Merge Defaults + Overrides)
     # -------------------------------------------------------
@@ -155,7 +164,7 @@ def start_training2(model_name="CNN", model_params=None, training_params=None, d
 
     # Instantiate Model
     model = instantiate_model(model_name, current_train_cfg['batch_size'], current_model_cfg, data_input_shape)        
-    model = model.to(device) 
+    model = model.to(device_obj) 
     # Get criterion
     criterion = get_criterion_from_name(current_train_cfg['criterion_name'])  
 
