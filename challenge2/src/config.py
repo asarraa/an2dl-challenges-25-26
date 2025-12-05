@@ -1,87 +1,45 @@
-
-# -----------------------------
-# Network training parameters
-# -----------------------------
-BATCH_SIZE = 128
-LEARNING_RATE = 1e-3
-EPOCHS = 1000
-PATIENCE = 50
-
-# Regularisation
-DROPOUT_RATE = 0.2         # Dropout probability
-L1_LAMBDA = 0            # L1 penalty
-L2_LAMBDA = 0            # L2 penalty
-
 # Set up loss function and optimizer
 #criterion = nn.CrossEntropyLoss() --> substituted by the following
-CRITERION_NAME = "crossentropy"
-
-# Print the defined parameters
-'''print("Epochs:", EPOCHS)
-print("Batch Size:", BATCH_SIZE)
-print("Learning Rare:", LEARNING_RATE)
-print("Dropout Rate:", DROPOUT_RATE)
-print("L1 Penalty:", L1_LAMBDA)
-print("L2 Penalty:", L2_LAMBDA)
-'''
-
-# -----------------------------
-# CNN Architecture parameters
-# -----------------------------
-
-INPUT_SHAPE = (3,32,32) #related to data
-
-DROPOUT_RATE_CLASSIFIER_HEAD = DROPOUT_RATE
-
-# Number of convolutional blocks
-NUM_BLOCKS = 2
-
-# Number of conv layers per block
-CONVS_PER_BLOCK = 1
-
-# Use strided convolutions instead of pooling
-USE_STRIDE = False
-
-# Stride value when USE_STRIDE is True
-STRIDE_VALUE = 2
-
-# Padding size
-PADDING_SIZE = 1
-
-# Pooling size when USE_STRIDE is False
-POOL_SIZE = 2
-
-# Number of channels in first block
-INITIAL_CHANNELS = 32
-
-# Channel multiplication factor between blocks
-CHANNEL_MULTIPLIER = 2
-
-'''print("Num Blocks:", NUM_BLOCKS)
-print("Convs per Block:", CONVS_PER_BLOCK)
-print("Use Stride:", USE_STRIDE)
-print("Stride Value:", STRIDE_VALUE)
-print("Padding Size:", PADDING_SIZE)
-print("Pool Size:", POOL_SIZE)
-print("Initial Channels:", INITIAL_CHANNELS)
-print("Channel Multiplier:", CHANNEL_MULTIPLIER)'''
-
-#For efficientNet
-
-# Initialize configuration for convolutional layers
-stack = 2
-blocks = 2
-filters = 32
-kernel_size = 3
-output_shape = 10
-
-
-#----
 MODEL_NAME = "CNN"
-OPTIMIZER_NAME = "crossentropy"
 
 
-# -----------------------------
-# Output parameters
-# -----------------------------
-VERBOSE = 1
+# --- config.py ---
+
+# 1. SHARED TRAINING PARAMETERS
+# Default values used if you don't override them in start_training()
+TRAINING_DEFAULTS = {
+    "batch_size": 128,
+    "epochs": 1000,
+    "learning_rate": 1e-3,
+    "patience": 50,
+    "l1_lambda": 0,
+    "l2_lambda": 0,
+    "verbose": 10,
+    "criterion_name" : "CrossEntropyLoss", # possible values: "CrossEntropyLoss"
+    "optimizer_name" : "adamw"
+}
+
+# 2. VANILLA CNN CONFIGURATION
+CNN_DEFAULTS = {
+    "input_shape": (3, 32, 32),
+    "num_classes": 10,
+    "num_blocks": 2,
+    "convs_per_block": 1,
+    "use_stride": False,
+    "stride_value": 2,
+    "padding_size": 1,
+    "pool_size": 2,
+    "initial_channels": 32,
+    "channel_multiplier": 2,
+    "dropout_rate_classifier_head": 0.2
+}
+
+# 3. EFFICIENTNET CONFIGURATION
+EFFICIENTNET_DEFAULTS = {
+    "input_shape": (3, 32, 32),
+    "num_classes": 10,      # same as "output_shape"
+    "filters": 32,
+    "kernel_size": 3,
+    "stack": 2,            
+    "blocks": 2
+}

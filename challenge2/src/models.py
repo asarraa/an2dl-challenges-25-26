@@ -46,10 +46,10 @@ class VanillaCNNBlock(nn.Module):
 # Convolutional Neural Network architecture for CIFAR10 classification
 #N.B. If use_stride is true, we apply downsapling with stride, otherwise we downsample with pooling
 class CNN(nn.Module):
-    def __init__(self, input_shape=(3,32,32), num_classes=10, dropout_rate=0.2,
+    def __init__(self, input_shape=(3,32,32), num_classes=10,
                  num_blocks=2, convs_per_block=1,
-                 use_stride=False stride_value=2, padding_size=1, pool_size=2,
-                 initial_channels=32, channel_multiplier=2):
+                 use_stride=False, stride_value=2, padding_size=1, pool_size=2,
+                 initial_channels=32, channel_multiplier=2, dropout_rate_classifier_head=0.2):
         super().__init__()
 
         # Build convolutional blocks
@@ -86,7 +86,7 @@ class CNN(nn.Module):
         # simple 1 layer feed forward neural network (this is the classification head network)
         self.classifier_head = nn.Sequential(
             nn.Flatten(),
-            nn.Dropout(dropout_rate),
+            nn.Dropout(dropout_rate_classifier_head),
             nn.Linear(flattened_size, num_classes)
         )
 
@@ -187,12 +187,12 @@ class EfficientNetModel(nn.Module):
 
     This model integrates the EfficientNet architecture for classification tasks.
     """
-    def __init__(self, input_shape, output_shape, filters=32, kernel_size=3, stack=2, blocks=3):
+    def __init__(self, input_shape, num_classes, filters=32, kernel_size=3, stack=2, blocks=3):
         """Initialises the EfficientNetModel.
 
         Args:
             input_shape (tuple): Shape of the input images (C, H, W).
-            output_shape (int): Number of output classes.
+            num_classes (int): Number of output classes.
             filters (int, optional): Initial number of filters for the first block. Defaults to 32.
             kernel_size (int, optional): Kernel size for convolutional layers. Defaults to 3.
             stack (int, optional): Number of MBConv units per block. Defaults to 2.
@@ -222,7 +222,7 @@ class EfficientNetModel(nn.Module):
 
         self.gap = nn.AdaptiveAvgPool2d(1) # Global Average Pooling
         self.flatten = nn.Flatten() # Flatten multi-dimensional output
-        self.dense = nn.Linear(current_channels, output_shape) # Final fully connected layer
+        self.dense = nn.Linear(current_channels, num_classes) # Final fully connected layer
 
     def forward(self, x):
         """Defines the forward pass of the EfficientNetModel.

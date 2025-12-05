@@ -234,7 +234,7 @@ def fit(model, train_loader, val_loader, epochs, criterion, optimizer, scaler, d
 
     comet_experiment.log_model(comet_experiment, model_name="test1")
 
-    comet_experiment.end()
+    #comet_experiment.end() 
     return model, training_history
 
 
