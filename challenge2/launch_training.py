@@ -80,7 +80,7 @@ def start_training(model_name="CNN", model_params=None, training_params=None, de
     """
        # --- 0. INIT REGISTRY & ID (MOVED TO TOP) ---
     # We create the ID now so Comet and Registry share it
-    reg_manager = registry.ModelRegistry(base_dir="experiments")
+    reg_manager = registry_module.ModelRegistry(base_dir="experiments")
     run_id = reg_manager.generate_id(prefix=model_name)
 
     best_model, best_performance = initialize_training()
@@ -145,7 +145,7 @@ def start_training(model_name="CNN", model_params=None, training_params=None, de
 
     hyper_params = {
       "learning_rate": current_train_cfg['learning_rate'],
-      "batch_size": config.LOADER_PARAMS['batch_size'],
+      "batch_size": current_train_cfg['batch_size'],
       "epochs": current_train_cfg['epochs'],
       "model": model_name,
     }
@@ -159,7 +159,7 @@ def start_training(model_name="CNN", model_params=None, training_params=None, de
 
     print("[DEBUG] About to instantiate model...", flush=True)
     # Instantiate Model
-    model = instantiate_model(model_name, config.LOADER_PARAMS['batch_size'], current_model_cfg, data_input_shape, device_obj)
+    model = instantiate_model(model_name, current_train_cfg['batch_size'], current_model_cfg, data_input_shape, device_obj)
     print("[DEBUG] Model instantiated successfully", flush=True)        
     #model = model.to(device_obj) 
     # Get criterion
@@ -222,10 +222,7 @@ def start_training(model_name="CNN", model_params=None, training_params=None, de
     # -------------------------------------------------------
     # 5. SAVE TO REGISTRY 
     # -------------------------------------------------------
-    
-    # Initialize Registry (saves to 'experiments/' folder by default)
-    registry = registry_module.ModelRegistry(base_dir="experiments")
-    
+        
     # Extract final metrics from history
     # We take the last value of the validation F1 and Loss
     final_metrics = {
@@ -239,7 +236,7 @@ def start_training(model_name="CNN", model_params=None, training_params=None, de
     current_model_cfg["model_name"] = model_name
 
     # Save everything
-    exp_id = registry.save_experiment(
+    exp_id = reg_manager.save_experiment(
         model=model,
         optimizer=optimizer,
         train_cfg=current_train_cfg,
@@ -254,21 +251,3 @@ def start_training(model_name="CNN", model_params=None, training_params=None, de
     
     return model, training_history
 
-
-def load_model(self, exp_id, model_class, device):
-        """Helper to load a model by ID"""
-        if exp_id not in self.registry:
-            raise ValueError(f"ID {exp_id} not found in registry.")
-            
-        entry = self.registry[exp_id]
-        path = entry["model_path"]
-        config = entry["model_architecture"]
-        
-        # Instantiate
-        model = model_class(**config)
-        
-        # Load Weights
-        checkpoint = torch.load(path, map_location=device)
-        model.load_state_dict(checkpoint['model_state_dict'])
-        
-        return model.to(device)
