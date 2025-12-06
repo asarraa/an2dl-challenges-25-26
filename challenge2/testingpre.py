@@ -335,11 +335,14 @@ def add_to_array(image, mask, array):
 # =============================================================================
 
 def main():
-    base_data = Path("./")
+    #base_data = Path("./")
     
     # Input Directories
+    # train_dir = base_data / "train_data"
+    # #test_dir = base_data / "test_data"
+    # labels_csv = base_data / "train_labels.csv"
+    base_data = Path("../../drive/MyDrive/AN2DL_Challenge2-TheBigBatchTheory/data/dataset")
     train_dir = base_data / "train_data"
-    #test_dir = base_data / "test_data"
     labels_csv = base_data / "train_labels.csv"
 
     # Output Directories
