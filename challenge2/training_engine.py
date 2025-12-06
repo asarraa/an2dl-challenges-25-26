@@ -153,6 +153,8 @@ def fit(model, train_loader, val_loader, epochs, criterion, optimizer, scaler, d
     """
 
 
+    print("[DEBUG] fit() function started", flush=True)
+    
     # Initialize metrics tracking
     #keeps track of all values during training and validation
     training_history = {
@@ -166,7 +168,7 @@ def fit(model, train_loader, val_loader, epochs, criterion, optimizer, scaler, d
         best_metric = float('-inf') if mode == 'max' else float('inf')
         best_epoch = 0
 
-    print(f"Training {epochs} epochs...")
+    print(f"[DEBUG] Training {epochs} epochs...", flush=True)
 
     # Main training loop: iterate through epochs
     for epoch in range(1, epochs + 1):

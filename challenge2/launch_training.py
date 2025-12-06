@@ -142,9 +142,10 @@ def start_training(model_name="CNN", model_params=None, training_params=None, de
     # 2. INSTANTIATE (Using the merged configs)
     # -------------------------------------------------------
 
-
+    print("[DEBUG] About to instantiate model...", flush=True)
     # Instantiate Model
-    model = instantiate_model(model_name, current_train_cfg['batch_size'], current_model_cfg, data_input_shape, device_obj)        
+    model = instantiate_model(model_name, current_train_cfg['batch_size'], current_model_cfg, data_input_shape, device_obj)
+    print("[DEBUG] Model instantiated successfully", flush=True)        
     #model = model.to(device_obj) 
     # Get criterion
     criterion = get_criterion_from_name(current_train_cfg['criterion_name'])  
@@ -176,6 +177,7 @@ def start_training(model_name="CNN", model_params=None, training_params=None, de
     # 3. RUN TRAINING
     # -------------------------------------------------------
 
+    print("[DEBUG] About to call fit()...", flush=True)
     # Train model and track training history
     model, training_history = fit(
         model=model,
