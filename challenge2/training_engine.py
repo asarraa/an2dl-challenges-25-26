@@ -170,11 +170,15 @@ def fit(model, train_loader, val_loader, epochs, criterion, optimizer, scaler, d
 
     # Main training loop: iterate through epochs
     for epoch in range(1, epochs + 1):
+        print(f"Starting epoch {epoch}...", flush=True)  # Debug line
+
 
         # Forward pass through training data, compute gradients, update weights
         train_loss, train_f1 = train_one_epoch(
             model, train_loader, criterion, optimizer, scaler, device, l1_lambda, l2_lambda
         )
+
+        print(f"Epoch {epoch} train done", flush=True)  # Debug line
 
         # Evaluate model on validation data without updating weights
         val_loss, val_f1 = validate_one_epoch(
