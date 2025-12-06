@@ -230,6 +230,7 @@ def process_single_slide(img_path, mask_path, label, output_img_dir, output_mask
         list: A list of dictionaries containing metadata for the generated tiles.
               Returns "SHREK" string if the image was discarded.
     """
+    print(f"Processing Slide: {img_path.name}")
     img_bgr = load_image_cv2(img_path)
     mask_gray = load_mask_cv2(mask_path)
     
