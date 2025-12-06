@@ -144,7 +144,7 @@ def start_training(model_name="CNN", model_params=None, training_params=None, de
 
     # Instantiate Model
     model = instantiate_model(model_name, current_train_cfg['batch_size'], current_model_cfg, data_input_shape, device_obj)        
-    model = model.to(device_obj) 
+    #model = model.to(device_obj) 
     # Get criterion
     criterion = get_criterion_from_name(current_train_cfg['criterion_name'])  
 
