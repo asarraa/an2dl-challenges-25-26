@@ -122,6 +122,118 @@ def add_to_array(image, mask, array):
     array.append((img4d))
     return
 
+def preprocess():
+    input_dir = "/content/drive/MyDrive/AN2DL_Challenge2-TheBigBatchTheory/data"
+    output_dir = "/content/drive/MyDrive/AN2DL_Challenge2-TheBigBatchTheory/data/processed"
+    labels_dir = "/content/drive/MyDrive/AN2DL_Challenge2-TheBigBatchTheory/data/train_labels.csv"
+    labels = pd.read_csv(labels_dir)    
+    
+    # Creazione struttura cartelle output
+    final_img_dir = output_dir / "images"
+    final_mask_dir = output_dir / "masks"
+    discard_dir = output_dir / "discarded_shrek"
+
+    final_img_dir.mkdir(parents=True, exist_ok=True)
+    final_mask_dir.mkdir(parents=True, exist_ok=True)
+    discard_dir.mkdir(parents=True, exist_ok=True)
+
+    # Trova tutte le immagini
+    extensions = ["*.png", "*.jpg", "*.jpeg"]
+    img_files = []
+    for ext in extensions:
+        img_files.extend(list(input_dir.glob(f"**/{ext}")))
+
+    # Filtra solo quelli che matchano il pattern img_XXXX
+    img_files = [f for f in img_files if f.name.startswith("img_") and "mask" not in f.name]
+
+    print(f"Trovate {len(img_files)} immagini da processare.")
+    print("-" * 50)
+
+    stats = {"SAFE": 0, "SHREK": 0, "ERROR": 0}
+    report_rows = []
+    img_array = []
+    
+    for i, img_path in enumerate(img_files):
+        try:
+            # 1. Identifica Mask path
+            # Assume formato: img_1234.png -> mask_1234.png
+            file_stem = img_path.stem # img_1234
+            suffix = img_path.suffix  # .png
+            # Estrae il numero (o la parte dopo img_)
+            id_part = file_stem.replace("img_", "")
+            mask_name = f"mask_{id_part}{suffix}"
+            mask_path = img_path.parent / mask_name
+
+            if not mask_path.exists():
+                # Prova fallback estensione png se originale era jpg
+                mask_path = img_path.parent / f"mask_{id_part}.png"
+                if not mask_path.exists():
+                    print(f"⚠️ Mask non trovata per {img_path.name}, salto.")
+                    stats["ERROR"] += 1
+                    continue
+
+            # 2. Carica Immagine e Maschera
+            img_bgr = load_image_cv2(img_path)
+            mask_gray = load_mask_cv2(mask_path)
+
+            if img_bgr is None or mask_gray is None:
+                print(f"Errore caricamento file per {img_path.name}")
+                stats["ERROR"] += 1
+                continue
+
+            # 3. RIMOZIONE SLIME
+            img_clean, mask_clean = process_slime_removal(img_bgr, mask_gray)
+            
+            # 4. CLASSIFICAZIONE V11 (Sull'immagine pulita!)
+            cls, r_tiss, r_shrek, dom = analyze_image_memory(img_clean)
+
+            # Logging
+            report_rows.append({
+                "filename": img_path.name,
+                "classification": cls,
+                "pink_ratio": r_tiss,
+                "shrek_ratio": r_shrek,
+                "dominance": dom
+            })
+
+            # 5. SALVATAGGIO
+            if cls == "SHREK":
+                # Sposta/Salva nei scarti
+                cv2.imwrite(str(discard_dir / img_path.name), img_clean)
+                cv2.imwrite(str(discard_dir / mask_name), mask_clean)
+                stats["SHREK"] += 1
+                #i want to remove the corresponding row from labels dataframe
+                labels.drop(labels[labels['sample_index'] == img_path.name].index, inplace=True)
+                #print(f"❌ {img_path.name} -> SHREK (Scartato)")
+            else:
+                # SAFE -> Salva nelle cartelle finali divise
+                cv2.imwrite(str(final_img_dir / img_path.name), img_clean)
+                cv2.imwrite(str(final_mask_dir / mask_name), mask_clean)
+                stats["SAFE"] += 1
+                # print(f"✅ {img_path.name} -> SAFE") # Decommenta per log verbose
+                add_to_array(img_clean, mask_clean, img_array)
+
+        except Exception as e:
+            print(f"Errore critico su {img_path.name}: {e}")
+            stats["ERROR"] += 1
+        
+        # Avanzamento
+        if i % 20 == 0:
+            print(f"Processati {i}/{len(img_files)}...", end="\r")
+
+    # Salva labels in un file csv in /processed
+    labels.to_csv(output_dir / "train_labels_processed.csv", index=False)
+    np.save(output_dir / "processed_images.npy", np.array(img_array))
+    
+    print("\n" + "="*50)
+    print("ELABORAZIONE COMPLETATA")
+    print(f"📁 Output: {output_dir}")
+    print(f"✅ Immagini SAFE (Salvate): {stats['SAFE']}")
+    print(f"❌ Immagini SHREK (Scartate): {stats['SHREK']}")
+    print(f"⚠️ Errori (No Mask/Corrotte): {stats['ERROR']}")
+    print("="*50)
+    return
+
 # --- 4. MAIN PIPELINE ---
 
 def main():
