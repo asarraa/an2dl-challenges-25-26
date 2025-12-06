@@ -8,7 +8,6 @@ MODEL_NAME = "CNN"
 # 1. SHARED TRAINING PARAMETERS
 # Default values used if you don't override them in start_training()
 TRAINING_DEFAULTS = {
-    "batch_size": 128,
     "epochs": 1000,
     "learning_rate": 1e-3,
     "patience": 50,
@@ -16,7 +15,12 @@ TRAINING_DEFAULTS = {
     "l2_lambda": 0,
     "verbose": 10,
     "criterion_name" : "CrossEntropyLoss", # possible values: "CrossEntropyLoss"
-    "optimizer_name" : "adamw"
+    "optimizer_name" : "adamw",
+}
+
+LOADER_PARAMS = {
+    "batch_size": 128,
+    "percentage_validation": 0.2
 }
 
 # 2. VANILLA CNN CONFIGURATION

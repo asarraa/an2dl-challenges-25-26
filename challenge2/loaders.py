@@ -6,7 +6,7 @@ import pandas as pd
 from torchvision.transforms import v2 as transforms
 from sklearn.model_selection import train_test_split
 from torch.utils.data import DataLoader
-from config import TRAINING_DEFAULTS
+from config import LOADER_PARAMS
 SEED = 42
 
 # Custom Dataset class that applies transforms v2 on-the-fly
@@ -83,18 +83,14 @@ def make_loader(ds, batch_size, shuffle, drop_last):
         prefetch_factor=4,  # Load 4 batches ahead
     )
 
-def get_loaders(augmentation = None, batch_size=TRAINING_DEFAULTS["batch_size"]):
+def get_loaders(augmentation = None, batch_size=LOADER_PARAMS["batch_size"]):
     path = "./data/processed"
     X = np.load(os.path.join(path, "/processed_images.npy"))
     y = pd.read_csv(os.path.join(path, "/train_labels_processed.csv"))
     
-    X_train_val, X_test, y_train_val, y_test = train_test_split(
-    X, y, random_state=SEED, test_size=30, stratify=y
-    )
-    
-    # Further split train_val into train and validation sets
+    # Load dataset
     X_train, X_val, y_train, y_val = train_test_split(
-        X_train_val, y_train_val, random_state=SEED, test_size=len(X_test), stratify=y_train_val
+        X, y, random_state=SEED, test_size=np.floor(LOADER_PARAMS["percentage_validation"]*len(X)), stratify=y
     )
     
     # Define the input shape based on the training data
@@ -113,10 +109,10 @@ def get_loaders(augmentation = None, batch_size=TRAINING_DEFAULTS["batch_size"])
     # Create augmented datasets
     train_aug_ds = AugmentedDataset(X_train, y_train.squeeze(), transform=train_augmentation)
     val_aug_ds = AugmentedDataset(X_val, y_val.squeeze(), transform=None)
-    test_aug_ds = AugmentedDataset(X_test, y_test.squeeze(), transform=None)
+    #test_aug_ds = AugmentedDataset(X_test, y_test.squeeze(), transform=None)
     
     # Create data loaders for augmented datasets
     train_aug_loader = make_loader(train_aug_ds, batch_size=batch_size, shuffle=True, drop_last=False)
     val_aug_loader = make_loader(val_aug_ds, batch_size=batch_size, shuffle=False, drop_last=False)
-    test_aug_loader = make_loader(test_aug_ds, batch_size=batch_size, shuffle=False, drop_last=False)
-    return train_aug_loader, val_aug_loader, test_aug_loader, input_shape
+    #test_aug_loader = make_loader(test_aug_ds, batch_size=batch_size, shuffle=False, drop_last=False)
+    return train_aug_loader, val_aug_loader, input_shape
