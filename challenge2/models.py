@@ -53,6 +53,18 @@ class CNN(nn.Module):
                  use_stride=False, stride_value=2, padding_size=1, pool_size=2,
                  initial_channels=32, channel_multiplier=2, dropout_rate_classifier_head=0.2):
         super().__init__()
+        print("[DEBUG] Initializing CNN model with the following parameters:")
+        print(f"input_shape: {input_shape}")
+        print(f"num_classes: {num_classes}")
+        print(f"num_blocks: {num_blocks}")
+        print(f"convs_per_block: {convs_per_block}")
+        print(f"use_stride: {use_stride}")
+        print(f"stride_value: {stride_value}")
+        print(f"padding_size: {padding_size}")
+        print(f"pool_size: {pool_size}")
+        print(f"initial_channels: {initial_channels}")
+        print(f"channel_multiplier: {channel_multiplier}")
+        print(f"dropout_rate_classifier_head: {dropout_rate_classifier_head}")
 
         # Build convolutional blocks
         blocks = []
