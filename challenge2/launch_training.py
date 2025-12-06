@@ -82,12 +82,18 @@ def start_training(model_name="CNN", model_params=None, training_params=None, de
     best_model, best_performance = initialize_training()
 
     # Ensure 'device' is a proper torch object, not just a string
+    print(f"[DEBUG] Device requested: {device}, CUDA available: {torch.cuda.is_available()}", flush=True)
     if device == "cuda" and torch.cuda.is_available():
         device_obj = torch.device("cuda")
+        print(f"✓ Using GPU: {torch.cuda.get_device_name(0)}", flush=True)
     else:
         device_obj = torch.device("cpu")
+        if device == "cuda":
+            print("⚠️ WARNING: CUDA requested but not available! Using CPU instead.", flush=True)
+        else:
+            print("⚠️ WARNING: Using CPU (this will be slow!)", flush=True)
         
-    print(f"--- Starting {model_name} on {device_obj} ---")
+    print(f"--- Starting {model_name} on {device_obj} ---", flush=True)
 
     # -------------------------------------------------------
     # 1. SETUP CONFIGURATION (Merge Defaults + Overrides)
