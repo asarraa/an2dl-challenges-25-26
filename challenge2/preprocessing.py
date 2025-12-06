@@ -208,7 +208,7 @@ def preprocess():
                 cv2.imwrite(str(final_img_dir / img_path.name), img_clean)
                 cv2.imwrite(str(final_mask_dir / mask_name), mask_clean)
                 stats["SAFE"] += 1
-                # print(f"✅ {img_path.name} -> SAFE") # Decommenta per log verbose
+                print(f"✅ {img_path.name} -> SAFE") # Decommenta per log verbose
                 add_to_array(img_clean, mask_clean, img_array)
 
         except Exception as e:
