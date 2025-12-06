@@ -254,7 +254,7 @@ def fit(model, train_loader, val_loader, epochs, criterion, optimizer, scaler, d
     if writer is not None:
         writer.close()
 
-    comet_experiment.log_model(comet_experiment, model_name="test1")
+    comet_experiment.log_model(name="test1", file_or_folder="models/"+experiment_name+'_model.pt')
 
     #comet_experiment.end() 
     return model, training_history

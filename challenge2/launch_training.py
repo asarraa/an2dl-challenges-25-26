@@ -103,6 +103,9 @@ def start_training(model_name="CNN", model_params=None, training_params=None, de
         
     print(f"--- Starting {model_name} on {device_obj} ---", flush=True)
 
+    os.makedirs("models", exist_ok=True)
+    os.makedirs("experiments", exist_ok=True)
+
     # -------------------------------------------------------
     # 1. SETUP CONFIGURATION (Merge Defaults + Overrides)
     # -------------------------------------------------------
@@ -224,7 +227,7 @@ def start_training(model_name="CNN", model_params=None, training_params=None, de
     # -------------------------------------------------------
     
     # Initialize Registry (saves to 'experiments/' folder by default)
-    registry = registry.ModelRegistry(base_dir="experiments")
+    registry = registry_module.ModelRegistry(base_dir="experiments")
     
     # Extract final metrics from history
     # We take the last value of the validation F1 and Loss
@@ -239,7 +242,7 @@ def start_training(model_name="CNN", model_params=None, training_params=None, de
     current_model_cfg["model_name"] = model_name
 
     # Save everything
-    exp_id = registry.save_experiment(
+    exp_id = registry_module.save_experiment(
         model=model,
         optimizer=optimizer,
         train_cfg=current_train_cfg,
