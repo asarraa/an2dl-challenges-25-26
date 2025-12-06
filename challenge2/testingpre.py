@@ -346,9 +346,10 @@ def main():
     train_dir = base_data / "train_data"
     labels_csv = base_data / "train_labels.csv"
 
+
+
     # Output Directories
     processed_dir = base_data / "testpreprocessing"
-    arrays_dir = processed_dir / "arrays"
     
     # Create specific subdirectories for organized output
     out_train_img = processed_dir / "train/images"
@@ -356,9 +357,10 @@ def main():
     out_test_img = processed_dir / "test/images"
     out_test_mask = processed_dir / "test/masks"
     discard_dir = processed_dir / "discarded_shrek"
+    arrays_dir = processed_dir / "arrays"
 
     # Clean up previous runs and create directories
-    for d in [out_train_img, out_train_mask, out_test_img, out_test_mask, discard_dir]:
+    for d in [out_train_img, out_train_mask, out_test_img, out_test_mask, discard_dir, arrays_dir]:
         if d.exists(): shutil.rmtree(d)
         d.mkdir(parents=True, exist_ok=True)
 
