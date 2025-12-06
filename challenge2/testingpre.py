@@ -212,7 +212,7 @@ def analyze_image_memory(img_bgr):
 # 4. TILING ENGINE
 # =============================================================================
 
-def process_single_slide(img_path, mask_path, label, output_img_dir, output_mask_dir, discard_dir, array, is_test_set=False):
+def process_single_slide(img_path, mask_path, label, output_img_dir, output_mask_dir, discard_dir, arrays_dir, is_test_set=False):
     """
     Orchestrates the processing pipeline for a single whole-slide image (WSI) or ROI.
     Pipeline: Load -> Remove Slime -> Check Quality (Shrek) -> Tile -> Save.
@@ -230,7 +230,7 @@ def process_single_slide(img_path, mask_path, label, output_img_dir, output_mask
         list: A list of dictionaries containing metadata for the generated tiles.
               Returns "SHREK" string if the image was discarded.
     """
-    print(f"Processing Slide: {img_path.name}")
+    img_array = []
     img_bgr = load_image_cv2(img_path)
     mask_gray = load_mask_cv2(mask_path)
     
@@ -299,7 +299,7 @@ def process_single_slide(img_path, mask_path, label, output_img_dir, output_mask
                 # Save to disk
                 cv2.imwrite(str(output_img_dir / tile_name), img_crop)
                 cv2.imwrite(str(output_mask_dir / tile_name), mask_crop)
-                add_to_array(img_crop, mask_crop, array)
+                add_to_array(img_crop, mask_crop, img_array)
 
                 # Prepare metadata for CSV
                 row = {
@@ -314,6 +314,7 @@ def process_single_slide(img_path, mask_path, label, output_img_dir, output_mask
                 
                 tiles_data.append(row)
 
+    np.save(arrays_dir / f"{base_name}.npy", np.array(img_array))
     return tiles_data
 
 
@@ -347,6 +348,7 @@ def main():
 
     # Output Directories
     processed_dir = base_data / "testpreprocessing"
+    arrays_dir = processed_dir / "arrays"
     
     # Create specific subdirectories for organized output
     out_train_img = processed_dir / "train/images"
@@ -373,7 +375,6 @@ def main():
         labels_df = labels_df.sort_values(by='sample_index')
         
         train_rows = []
-        img_array = []
         
         # Iterate through the sorted labels
         for _, row in tqdm(labels_df.iterrows(), total=len(labels_df), desc="Training Slides"):
@@ -400,16 +401,14 @@ def main():
             # Process the slide
             res = process_single_slide(
                 img_path, mask_path, label, 
-                out_train_img, out_train_mask, discard_dir, 
+                out_train_img, out_train_mask, discard_dir, arrays_dir,
                 is_test_set=False,
-                array = img_array
             )
             
             # If successful (list returned), add rows to the dataset
             if isinstance(res, list): 
                 train_rows.extend(res)
         
-        np.save(processed_dir / "processed_patches.npy", np.array(img_array))
 
         # Save the final CSV for training
         if train_rows:

@@ -3,6 +3,7 @@ import os
 import numpy as np
 import torch
 import pandas as pd
+import glob
 from torchvision.transforms import v2 as transforms
 from sklearn.model_selection import train_test_split
 from torch.utils.data import DataLoader
@@ -85,7 +86,11 @@ def make_loader(ds, batch_size, shuffle, drop_last):
 
 def get_loaders(augmentation = None, batch_size=LOADER_PARAMS["batch_size"]):
     path = "./data/testpreprocessing"
-    X = np.load(os.path.join(path, "/processed_patches.npy"))
+    
+    file_paths = glob.glob(os.path.join(path+"/arrays", "*.npy"))
+    arrays_list = [np.load(f) for f in file_paths]
+    X = np.concatenate(arrays_list, axis=0)
+    #X = np.load(os.path.join(path, "/processed_patches.npy"))
     y = pd.read_csv(os.path.join(path, "/train_patches.csv"))
     
     # Load dataset
