@@ -42,7 +42,8 @@ def instantiate_model(model_name, batch_size, current_model_cfg, data_input_shap
     # Move model to device BEFORE calling summary (torchsummary requires this)
     model = model.to(device_obj)
 
-    summary(model, input_size=data_input_shape)
+    # Pass device to torchsummary so it creates input on the correct device
+    summary(model, input_size=data_input_shape, device=str(device_obj.type))
     #model_graph = draw_graph(model, input_size=(batch_size)+config.input_shape, expand_nested=True, depth=5)
     #model_graph.visual_graph
     return model
