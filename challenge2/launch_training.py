@@ -242,7 +242,7 @@ def start_training(model_name="CNN", model_params=None, training_params=None, de
     current_model_cfg["model_name"] = model_name
 
     # Save everything
-    exp_id = registry_module.save_experiment(
+    exp_id = registry.save_experiment(
         model=model,
         optimizer=optimizer,
         train_cfg=current_train_cfg,
