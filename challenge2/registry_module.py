@@ -18,8 +18,12 @@ class ModelRegistry:
         
         # Load existing registry or create new
         if os.path.exists(self.registry_path):
-            with open(self.registry_path, 'r') as f:
-                self.registry = json.load(f)
+            try:
+                with open(self.registry_path, 'r') as f:
+                    self.registry = json.load(f)
+            except json.JSONDecodeError:
+                print(f"⚠️ Warning: {self.registry_path} was corrupted or empty. Starting a fresh registry.")
+                self.registry = {}
         else:
             self.registry = {}
 
