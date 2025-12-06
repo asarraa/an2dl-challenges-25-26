@@ -120,9 +120,10 @@ def add_to_array(image, mask, array):
     return
 
 def preprocess():
-    input_dir = "/content/drive/MyDrive/AN2DL_Challenge2-TheBigBatchTheory/data/dataset/train_data"
-    output_dir = "/content/drive/MyDrive/AN2DL_Challenge2-TheBigBatchTheory/data/processed"
-    labels_dir = "/content/drive/MyDrive/AN2DL_Challenge2-TheBigBatchTheory/data/dataset/train_labels.csv"
+    exit_path = "../../"
+    input_dir = exit_path + "drive/MyDrive/AN2DL_Challenge2-TheBigBatchTheory/data/dataset/train_data"
+    output_dir = exit_path + "drive/MyDrive/AN2DL_Challenge2-TheBigBatchTheory/data/processed"
+    labels_dir = exit_path + "drive/MyDrive/AN2DL_Challenge2-TheBigBatchTheory/data/dataset/train_labels.csv"
     labels = pd.read_csv(labels_dir)    
     
     # Creazione struttura cartelle output
