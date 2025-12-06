@@ -145,7 +145,7 @@ def start_training(model_name="CNN", model_params=None, training_params=None, de
 
     hyper_params = {
       "learning_rate": current_train_cfg['learning_rate'],
-      "batch_size": current_train_cfg['batch_size'],
+      "batch_size": config.LOADER_PARAMS['batch_size'],
       "epochs": current_train_cfg['epochs'],
       "model": model_name,
     }
@@ -159,7 +159,7 @@ def start_training(model_name="CNN", model_params=None, training_params=None, de
 
     print("[DEBUG] About to instantiate model...", flush=True)
     # Instantiate Model
-    model = instantiate_model(model_name, current_train_cfg['batch_size'], current_model_cfg, data_input_shape, device_obj)
+    model = instantiate_model(model_name, config.LOADER_PARAMS['batch_size'], current_model_cfg, data_input_shape, device_obj)
     print("[DEBUG] Model instantiated successfully", flush=True)        
     #model = model.to(device_obj) 
     # Get criterion
