@@ -6,8 +6,8 @@ import pandas as pd
 from torchvision.transforms import v2 as transforms
 from sklearn.model_selection import train_test_split
 from torch.utils.data import DataLoader
+from config import TRAINING_DEFAULTS
 SEED = 42
-BATCH_SIZE = 16
 
 # Custom Dataset class that applies transforms v2 on-the-fly
 class AugmentedDataset(torch.utils.data.Dataset):
@@ -83,7 +83,7 @@ def make_loader(ds, batch_size, shuffle, drop_last):
         prefetch_factor=4,  # Load 4 batches ahead
     )
 
-def get_loaders(augmentation = None, batch_size=BATCH_SIZE):
+def get_loaders(augmentation = None, batch_size=TRAINING_DEFAULTS["batch_size"]):
     path = "./data/processed"
     X = np.load(os.path.join(path, "/processed_images.npy"))
     y = pd.read_csv(os.path.join(path, "/train_labels_processed.csv"))
