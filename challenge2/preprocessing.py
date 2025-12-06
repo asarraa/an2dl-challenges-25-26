@@ -120,16 +120,16 @@ def add_to_array(image, mask, array):
     return
 
 def preprocess():
-    exit_path = Path("../../")
-    input_dir = exit_path + "drive/MyDrive/AN2DL_Challenge2-TheBigBatchTheory/data/dataset/train_data"
-    output_dir = exit_path + "drive/MyDrive/AN2DL_Challenge2-TheBigBatchTheory/data/processed"
-    labels_dir = exit_path + "drive/MyDrive/AN2DL_Challenge2-TheBigBatchTheory/data/dataset/train_labels.csv"
+    exit_path = Path("../..")
+    input_dir = exit_path / "drive/MyDrive/AN2DL_Challenge2-TheBigBatchTheory/data/dataset/train_data"
+    output_dir = exit_path / "drive/MyDrive/AN2DL_Challenge2-TheBigBatchTheory/data/processed"
+    labels_dir = exit_path / "drive/MyDrive/AN2DL_Challenge2-TheBigBatchTheory/data/dataset/train_labels.csv"
     labels = pd.read_csv(labels_dir)    
     
     # Creazione struttura cartelle output
-    final_img_dir = output_dir + "/images"
-    final_mask_dir = output_dir / "/masks"
-    discard_dir = output_dir / "/discarded_shrek"
+    final_img_dir = output_dir / "images"
+    final_mask_dir = output_dir / "masks"
+    discard_dir = output_dir / "discarded_shrek"
 
     final_img_dir.mkdir(parents=True, exist_ok=True)
     final_mask_dir.mkdir(parents=True, exist_ok=True)
