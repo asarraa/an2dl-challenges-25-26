@@ -113,6 +113,15 @@ def analyze_image_memory(img_bgr):
 
     return "SAFE", ratio_tissue, ratio_shrek, shrek_dominance
 
+def add_to_array(image, mask, array):
+    """
+    Aggiunge immagine e maschera a un array esistente.
+    """
+    image = image[..., ::-1]
+    img4d = np.dstack((image, mask))
+    array.append((img4d))
+    return
+
 # --- 4. MAIN PIPELINE ---
 
 def main():
@@ -148,7 +157,8 @@ def main():
 
     stats = {"SAFE": 0, "SHREK": 0, "ERROR": 0}
     report_rows = []
-
+    img_array = []
+    
     for i, img_path in enumerate(img_files):
         try:
             # 1. Identifica Mask path
@@ -207,6 +217,7 @@ def main():
                 cv2.imwrite(str(final_mask_dir / mask_name), mask_clean)
                 stats["SAFE"] += 1
                 # print(f"✅ {img_path.name} -> SAFE") # Decommenta per log verbose
+                add_to_array(img_clean, mask_clean, img_array)
 
         except Exception as e:
             print(f"Errore critico su {img_path.name}: {e}")
@@ -219,6 +230,7 @@ def main():
     
     # Salva labels in un file csv in /processed
     labels.to_csv(output_dir / "train_labels_processed.csv", index=False)
+    np.save(output_dir / "processed_images.npy", np.array(img_array))
     
     print("\n" + "="*50)
     print("ELABORAZIONE COMPLETATA")
