@@ -78,6 +78,10 @@ def start_training(model_name="CNN", model_params=None, training_params=None, de
         model_params (dict): Dictionary of overrides for the model architecture.
         training_params (dict): Dictionary of overrides for training (lr, epochs, etc).
     """
+       # --- 0. INIT REGISTRY & ID (MOVED TO TOP) ---
+    # We create the ID now so Comet and Registry share it
+    reg_manager = registry.ModelRegistry(base_dir="experiments")
+    run_id = reg_manager.generate_id(prefix=model_name)
 
     best_model, best_performance = initialize_training()
 
@@ -94,13 +98,11 @@ def start_training(model_name="CNN", model_params=None, training_params=None, de
     else:
         # Default: use CUDA if available, otherwise CPU
         device_obj = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    
     print(f"[DEBUG] Device type: {type(device)}, Final device: {device_obj}, CUDA available: {torch.cuda.is_available()}", flush=True)
     if device_obj.type == "cuda":
         print(f"✓ Using GPU: {torch.cuda.get_device_name(0)}", flush=True)
     else:
         print("⚠️ WARNING: Using CPU (this will be slow!)", flush=True)
-        
     print(f"--- Starting {model_name} on {device_obj} ---", flush=True)
 
     os.makedirs("models", exist_ok=True)
@@ -133,16 +135,12 @@ def start_training(model_name="CNN", model_params=None, training_params=None, de
     print("Training Configuration:\n", train_parameters_summary)
     print("Model Configuration:\n", model_parameters_summary)
 
-    experiment_name = model_name + " parameters:" #TODO
-
-
-
-
         #Initialize Comet logging
     comet_experiment = start(
       api_key="nhvfD4vUpZNMoJQ3dEjOwIeua",
       project_name="test",
-      workspace="asarraa"
+      workspace="asarraa",
+      experiment_name=run_id
     )
 
     hyper_params = {
@@ -174,8 +172,7 @@ def start_training(model_name="CNN", model_params=None, training_params=None, de
     val_loader = val_loader  #TODO: take it from preprocessing:     preprocessing.get_data_loaders()
 
     # TensorBoard
-    experiment_name = f"{model_name}_run"
-    writer = SummaryWriter(f"tensorboard/{experiment_name}")
+    writer = SummaryWriter(f"tensorboard/{run_id}")
     '''
     writer = SummaryWriter(f"tensorboard/{experiment_name}")
     x = torch.randn(1, data_input_shape[0], data_input_shape[1], data_input_shape[2]).to(device_obj)
@@ -209,7 +206,7 @@ def start_training(model_name="CNN", model_params=None, training_params=None, de
         l1_lambda=current_train_cfg['l1_lambda'],
         l2_lambda=0, #already applied in AdamW optimizer, don't change!
         verbose=current_train_cfg['verbose'],
-        experiment_name=experiment_name, #TODO:check names
+        experiment_name=run_id, 
         patience=current_train_cfg['patience'],
         comet_experiment=comet_experiment
         )
@@ -223,7 +220,7 @@ def start_training(model_name="CNN", model_params=None, training_params=None, de
 
 
     # -------------------------------------------------------
-    # 5. SAVE TO REGISTRY (New Section)
+    # 5. SAVE TO REGISTRY 
     # -------------------------------------------------------
     
     # Initialize Registry (saves to 'experiments/' folder by default)
@@ -247,7 +244,8 @@ def start_training(model_name="CNN", model_params=None, training_params=None, de
         optimizer=optimizer,
         train_cfg=current_train_cfg,
         model_cfg=current_model_cfg,
-        metrics=final_metrics
+        metrics=final_metrics,
+        run_id=run_id
     )
     
     # Log the ID to Comet so you can link them
