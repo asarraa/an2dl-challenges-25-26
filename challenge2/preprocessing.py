@@ -127,9 +127,9 @@ def preprocess():
     labels = pd.read_csv(labels_dir)    
     
     # Creazione struttura cartelle output
-    final_img_dir = output_dir / "images"
-    final_mask_dir = output_dir / "masks"
-    discard_dir = output_dir / "discarded_shrek"
+    final_img_dir = output_dir + "/images"
+    final_mask_dir = output_dir + "/masks"
+    discard_dir = output_dir + "/discarded_shrek"
 
     final_img_dir.mkdir(parents=True, exist_ok=True)
     final_mask_dir.mkdir(parents=True, exist_ok=True)
