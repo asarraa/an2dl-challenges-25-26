@@ -84,9 +84,9 @@ def make_loader(ds, batch_size, shuffle, drop_last):
     )
 
 def get_loaders(augmentation = None, batch_size=LOADER_PARAMS["batch_size"]):
-    path = "./data/processed"
-    X = np.load(os.path.join(path, "/processed_images.npy"))
-    y = pd.read_csv(os.path.join(path, "/train_labels_processed.csv"))
+    path = "./data/testpreprocessing"
+    X = np.load(os.path.join(path, "/processed_patches.npy"))
+    y = pd.read_csv(os.path.join(path, "/train_patches.csv"))
     
     # Load dataset
     X_train, X_val, y_train, y_val = train_test_split(

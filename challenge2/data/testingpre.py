@@ -28,6 +28,7 @@ HSV_V_THRESH = 200
 # If more than 50% of the patch is background (glass), it is discarded.
 BACKGROUND_MAX_RATIO = 0.5 
 
+
 # =============================================================================
 # 1. UTILITY & I/O FUNCTIONS
 # =============================================================================
@@ -211,7 +212,7 @@ def analyze_image_memory(img_bgr):
 # 4. TILING ENGINE
 # =============================================================================
 
-def process_single_slide(img_path, mask_path, label, output_img_dir, output_mask_dir, discard_dir, is_test_set=False):
+def process_single_slide(img_path, mask_path, label, output_img_dir, output_mask_dir, discard_dir, array, is_test_set=False):
     """
     Orchestrates the processing pipeline for a single whole-slide image (WSI) or ROI.
     Pipeline: Load -> Remove Slime -> Check Quality (Shrek) -> Tile -> Save.
@@ -297,6 +298,7 @@ def process_single_slide(img_path, mask_path, label, output_img_dir, output_mask
                 # Save to disk
                 cv2.imwrite(str(output_img_dir / tile_name), img_crop)
                 cv2.imwrite(str(output_mask_dir / tile_name), mask_crop)
+                add_to_array(img_crop, mask_crop, array)
 
                 # Prepare metadata for CSV
                 row = {
@@ -313,6 +315,20 @@ def process_single_slide(img_path, mask_path, label, output_img_dir, output_mask
 
     return tiles_data
 
+
+# ============================================================================
+# Costruzione array npy da salvare
+# ============================================================================
+
+def add_to_array(image, mask, array):
+    """
+    Aggiunge immagine e maschera a un array esistente.
+    """
+    image = image[..., ::-1]
+    img4d = np.dstack((image, mask))
+    array.append((img4d))
+    return
+
 # =============================================================================
 # 5. MAIN EXECUTION
 # =============================================================================
@@ -322,7 +338,7 @@ def main():
     
     # Input Directories
     train_dir = base_data / "train_data"
-    test_dir = base_data / "test_data"
+    #test_dir = base_data / "test_data"
     labels_csv = base_data / "train_labels.csv"
 
     # Output Directories
@@ -353,6 +369,7 @@ def main():
         labels_df = labels_df.sort_values(by='sample_index')
         
         train_rows = []
+        img_array = []
         
         # Iterate through the sorted labels
         for _, row in tqdm(labels_df.iterrows(), total=len(labels_df), desc="Training Slides"):
@@ -380,13 +397,16 @@ def main():
             res = process_single_slide(
                 img_path, mask_path, label, 
                 out_train_img, out_train_mask, discard_dir, 
-                is_test_set=False
+                is_test_set=False,
+                array = img_array
             )
             
             # If successful (list returned), add rows to the dataset
             if isinstance(res, list): 
                 train_rows.extend(res)
         
+        np.save(processed_dir / "processed_patches.npy", np.array(img_array))
+
         # Save the final CSV for training
         if train_rows:
             train_df = pd.DataFrame(train_rows)
@@ -404,49 +424,49 @@ def main():
     # -------------------------------------------------------------------------
     # FASE 2: TEST SET PROCESSING
     # -------------------------------------------------------------------------
-    print("\n>>> FASE 2: Processing TEST SET (Weights Only - No Labels)")
+    # print("\n>>> FASE 2: Processing TEST SET (Weights Only - No Labels)")
     
-    if test_dir.exists():
-        test_rows = []
+    # if test_dir.exists():
+    #     test_rows = []
         
-        # Find all images.
-        # SORTING: We gather all files first, then sort them to ensure ascending order.
-        all_files = sorted(list(test_dir.glob("**/img_*.*")))
+    #     # Find all images.
+    #     # SORTING: We gather all files first, then sort them to ensure ascending order.
+    #     all_files = sorted(list(test_dir.glob("**/img_*.*")))
         
-        for img_path in tqdm(all_files, desc="Test Slides"):
-            # Skip if glob accidentally picked up a mask file
-            if "mask" in img_path.name: continue 
+    #     for img_path in tqdm(all_files, desc="Test Slides"):
+    #         # Skip if glob accidentally picked up a mask file
+    #         if "mask" in img_path.name: continue 
             
-            # Find corresponding mask
-            id_part = img_path.stem.replace("img_", "")
-            mask_path = img_path.parent / f"mask_{id_part}{img_path.suffix}"
-            if not mask_path.exists():
-                mask_path = img_path.parent / f"mask_{id_part}.png"
+    #         # Find corresponding mask
+    #         id_part = img_path.stem.replace("img_", "")
+    #         mask_path = img_path.parent / f"mask_{id_part}{img_path.suffix}"
+    #         if not mask_path.exists():
+    #             mask_path = img_path.parent / f"mask_{id_part}.png"
             
-            if not mask_path.exists(): continue
+    #         if not mask_path.exists(): continue
 
-            # Process the slide (Test Mode: label=None, is_test_set=True)
-            res = process_single_slide(
-                img_path, mask_path, None, 
-                out_test_img, out_test_mask, discard_dir, 
-                is_test_set=True
-            )
+    #         # Process the slide (Test Mode: label=None, is_test_set=True)
+    #         res = process_single_slide(
+    #             img_path, mask_path, None, 
+    #             out_test_img, out_test_mask, discard_dir, 
+    #             is_test_set=True
+    #         )
             
-            if isinstance(res, list): 
-                test_rows.extend(res)
+    #         if isinstance(res, list): 
+    #             test_rows.extend(res)
 
-        # Save the final CSV for testing
-        if test_rows:
-            test_df = pd.DataFrame(test_rows)
-            # Reorder columns (No Label column here)
-            cols = ['sample_index', 'original_sample', 'tumor_coverage']
-            test_df = test_df[cols]
-            test_df.to_csv(processed_dir / "test_patches.csv", index=False)
-            print(f"✅ Test Tiles Saved: {len(test_rows)}")
-        else:
-            print("⚠️ No tiles generated for Test Set.")
-    else:
-        print("⚠️ test_data folder not found.")
+    #     # Save the final CSV for testing
+    #     if test_rows:
+    #         test_df = pd.DataFrame(test_rows)
+    #         # Reorder columns (No Label column here)
+    #         cols = ['sample_index', 'original_sample', 'tumor_coverage']
+    #         test_df = test_df[cols]
+    #         test_df.to_csv(processed_dir / "test_patches.csv", index=False)
+    #         print(f"✅ Test Tiles Saved: {len(test_rows)}")
+    #     else:
+    #         print("⚠️ No tiles generated for Test Set.")
+    # else:
+    #     print("⚠️ test_data folder not found.")
 
-if __name__ == "__main__":
-    main()
+# if __name__ == "__main__":
+#     main()
