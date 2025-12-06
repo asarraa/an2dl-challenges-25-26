@@ -32,15 +32,19 @@ class ModelRegistry:
         timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
         return f"{prefix}_{timestamp}"
 
-    def save_experiment(self, model, optimizer, train_cfg, model_cfg, metrics):
+    def save_experiment(self, model, optimizer, train_cfg, model_cfg, metrics,  run_id=None):
         """
         Saves the model weights and logs metadata to registry.json.
         
         Returns:
             experiment_id (str): The ID assigned to this run.
         """
-        # 1. Generate ID
-        exp_id = self.generate_id(prefix=model_cfg.get("model_name", "model"))
+
+         # 1. Determine ID
+        if run_id is not None:
+            exp_id = run_id
+        else:
+            exp_id = self.generate_id(prefix=model_cfg.get("model_name", "model"))
         
         # 2. Define File Paths
         model_filename = f"{exp_id}.pt"
@@ -75,3 +79,22 @@ class ModelRegistry:
         print(f"✅ Registry updated: ID {exp_id}")
         
         return exp_id
+    
+
+def load_model(self, exp_id, model_class, device):
+        """Helper to load a model by ID"""
+        if exp_id not in self.registry:
+            raise ValueError(f"ID {exp_id} not found in registry.")
+            
+        entry = self.registry[exp_id]
+        path = entry["model_path"]
+        config = entry["model_architecture"]
+        
+        # Instantiate
+        model = model_class(**config)
+        
+        # Load Weights
+        checkpoint = torch.load(path, map_location=device)
+        model.load_state_dict(checkpoint['model_state_dict'])
+        
+        return model.to(device)
