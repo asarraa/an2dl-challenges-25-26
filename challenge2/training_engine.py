@@ -1,12 +1,14 @@
 import torch
 import numpy as np
 from sklearn.metrics import f1_score
-
-# Import DEBUG_MODE from launch_training
+'''
 try:
     from launch_training import DEBUG_MODE
 except ImportError:
     DEBUG_MODE = False  # Fallback if imported elsewhere
+'''
+
+DEBUG_MODE = True
 
 # -----------------------------
 # Training functions
