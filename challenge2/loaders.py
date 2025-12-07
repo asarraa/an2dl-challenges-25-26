@@ -85,9 +85,10 @@ def make_loader(ds, batch_size, shuffle, drop_last):
     )
 
 def get_loaders(augmentation = None, batch_size=LOADER_PARAMS["batch_size"]):
-    path = "./data/testpreprocessing"
+    path = "../../drive/MyDrive/AN2DL_Challenge2-TheBigBatchTheory/data/dataset/testpreprocessing"
     
     file_paths = glob.glob(os.path.join(path+"/arrays", "*.npy"))
+    print(f"file_paths: {file_paths}")
     arrays_list = [np.load(f) for f in file_paths]
     X = np.concatenate(arrays_list, axis=0)
     #X = np.load(os.path.join(path, "/processed_patches.npy"))
