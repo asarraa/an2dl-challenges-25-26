@@ -313,7 +313,9 @@ def process_single_slide(img_path, mask_path, label, output_img_dir, output_mask
                     row['label'] = label 
                 
                 tiles_data.append(row)
-                
+            
+    if len(tiles_data) == 0:
+        print(f"No valid tiles extracted from {img_path.name} after processing.")
     if len(img_array)>0:
         np.save(arrays_dir / f"{base_name}.npy", np.array(img_array))
     return tiles_data
