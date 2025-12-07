@@ -146,8 +146,9 @@ def start_training(model_name="CNN", model_params=None, training_params=None, de
       api_key="nhvfD4vUpZNMoJQ3dEjOwIeua",
       project_name="test",
       workspace="asarraa",
-      experiment_name=run_id
     )
+    
+    comet_experiment.set_name(run_id)
 
     hyper_params = {
       "learning_rate": current_train_cfg['learning_rate'],
