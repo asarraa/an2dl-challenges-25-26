@@ -80,6 +80,10 @@ def start_training(model_name="CNN", model_params=None, training_params=None, de
         model_params (dict): Dictionary of overrides for the model architecture.
         training_params (dict): Dictionary of overrides for training (lr, epochs, etc).
     """
+
+    os.makedirs("models", exist_ok=True)
+    os.makedirs("experiments", exist_ok=True)
+
        # --- 0. INIT REGISTRY & ID (MOVED TO TOP) ---
     # We create the ID now so Comet and Registry share it
     reg_manager = registry_module.ModelRegistry(base_dir="experiments")
@@ -109,8 +113,6 @@ def start_training(model_name="CNN", model_params=None, training_params=None, de
         print("⚠️ WARNING: Using CPU (this will be slow!)", flush=True)
     print(f"--- Starting {model_name} on {device_obj} ---", flush=True)
 
-    os.makedirs("models", exist_ok=True)
-    os.makedirs("experiments", exist_ok=True)
 
     # -------------------------------------------------------
     # 1. SETUP CONFIGURATION (Merge Defaults + Overrides)
@@ -236,7 +238,9 @@ def start_training(model_name="CNN", model_params=None, training_params=None, de
         "val_f1": training_history['val_f1'][-1],
         "val_loss": training_history['val_loss'][-1],
         "train_loss": training_history['train_loss'][-1],
-        "best_epoch_performance": max(training_history['val_f1']) # or however you track best
+        "best_val_f1": max(training_history['val_f1']), # or however you track best
+        "best_train_f1": max(training_history['train_f1'])
+
     }
     
     # Add 'model_name' to model_cfg so it appears in the ID
