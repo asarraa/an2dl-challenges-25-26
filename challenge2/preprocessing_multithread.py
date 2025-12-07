@@ -459,5 +459,5 @@ def main():
     else:
         print("⚠️ Finished, but no patches were generated.")
 
-if __name__ == "__main__":
-    main()
+'''if __name__ == "__main__":
+    main()'''
