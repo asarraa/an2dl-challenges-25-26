@@ -300,7 +300,6 @@ def process_single_slide(img_path, mask_path, label, output_img_dir, output_mask
                 cv2.imwrite(str(output_img_dir / tile_name), img_crop)
                 cv2.imwrite(str(output_mask_dir / tile_name), mask_crop)
                 add_to_array(img_crop, mask_crop, img_array)
-                np.save(arrays_dir / f"{base_name}.npy", np.array(img_array))
 
                 # Prepare metadata for CSV
                 row = {
@@ -314,7 +313,9 @@ def process_single_slide(img_path, mask_path, label, output_img_dir, output_mask
                     row['label'] = label 
                 
                 tiles_data.append(row)
-
+                
+    if len(img_array)>0:
+        np.save(arrays_dir / f"{base_name}.npy", np.array(img_array))
     return tiles_data
 
 
