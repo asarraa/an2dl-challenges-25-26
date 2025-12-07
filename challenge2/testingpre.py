@@ -327,6 +327,7 @@ def add_to_array(image, mask, array):
     Aggiunge immagine e maschera a un array esistente.
     """
     image = image[..., ::-1]
+    mask = mask[..., np.newaxis]
     img4d = np.dstack((image, mask))
     array.append((img4d))
     return
