@@ -230,7 +230,6 @@ def process_single_slide(img_path, mask_path, label, output_img_dir, output_mask
         list: A list of dictionaries containing metadata for the generated tiles.
               Returns "SHREK" string if the image was discarded.
     """
-    img_array = []
     img_bgr = load_image_cv2(img_path)
     mask_gray = load_mask_cv2(mask_path)
     
@@ -255,6 +254,7 @@ def process_single_slide(img_path, mask_path, label, output_img_dir, output_mask
     tiles_data = []
     h, w, _ = img_clean.shape
     base_name = img_path.stem # e.g., "img_001"
+    img_array = []
 
     # Iterate over the image with the defined stride
     for y in range(0, h, STRIDE):
@@ -300,6 +300,7 @@ def process_single_slide(img_path, mask_path, label, output_img_dir, output_mask
                 cv2.imwrite(str(output_img_dir / tile_name), img_crop)
                 cv2.imwrite(str(output_mask_dir / tile_name), mask_crop)
                 add_to_array(img_crop, mask_crop, img_array)
+                np.save(arrays_dir / f"{base_name}.npy", np.array(img_array))
 
                 # Prepare metadata for CSV
                 row = {
@@ -314,7 +315,6 @@ def process_single_slide(img_path, mask_path, label, output_img_dir, output_mask
                 
                 tiles_data.append(row)
 
-    np.save(arrays_dir / f"{base_name}.npy", np.array(img_array))
     return tiles_data
 
 
