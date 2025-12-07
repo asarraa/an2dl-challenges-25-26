@@ -14,6 +14,8 @@ import registry_module
 # We don't need preprocessing here because we pass data from the notebook
 from training_engine import fit 
 
+# ===== DEBUG MODE =====
+DEBUG_MODE = False  # Set to True to enable debug prints
 
 # -----------------------------
 # Helper Functions
@@ -98,7 +100,9 @@ def start_training(model_name="CNN", model_params=None, training_params=None, de
     else:
         # Default: use CUDA if available, otherwise CPU
         device_obj = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    print(f"[DEBUG] Device type: {type(device)}, Final device: {device_obj}, CUDA available: {torch.cuda.is_available()}", flush=True)
+    
+    if DEBUG_MODE:
+        print(f"[DEBUG] Device type: {type(device)}, Final device: {device_obj}, CUDA available: {torch.cuda.is_available()}", flush=True)
     if device_obj.type == "cuda":
         print(f"✓ Using GPU: {torch.cuda.get_device_name(0)}", flush=True)
     else:
@@ -157,10 +161,12 @@ def start_training(model_name="CNN", model_params=None, training_params=None, de
     # 2. INSTANTIATE (Using the merged configs)
     # -------------------------------------------------------
 
-    print("[DEBUG] About to instantiate model...", flush=True)
+    if DEBUG_MODE:
+        print("[DEBUG] About to instantiate model...", flush=True)
     # Instantiate Model
     model = instantiate_model(model_name, config.LOADER_PARAMS['batch_size'], current_model_cfg, data_input_shape, device_obj)
-    print("[DEBUG] Model instantiated successfully", flush=True)        
+    if DEBUG_MODE:
+        print("[DEBUG] Model instantiated successfully", flush=True)        
     #model = model.to(device_obj) 
     # Get criterion
     criterion = get_criterion_from_name(current_train_cfg['criterion_name'])  
@@ -191,7 +197,8 @@ def start_training(model_name="CNN", model_params=None, training_params=None, de
     # 3. RUN TRAINING
     # -------------------------------------------------------
 
-    print("[DEBUG] About to call fit()...", flush=True)
+    if DEBUG_MODE:
+        print("[DEBUG] About to call fit()...", flush=True)
     # Train model and track training history
     model, training_history = fit(
         model=model,

@@ -10,8 +10,8 @@ class ModelRegistry:
             base_dir: Folder where models and the registry.json will be saved.
         """
         self.base_dir = base_dir
-        self.registry_path = os.path.join(base_dir, "registry.json")
-        self.models_dir = os.path.join(base_dir, "models")
+        self.registry_path = os.path.join(base_dir, "registry.json") # /experiments/registry.json
+        self.models_dir = os.path.join(base_dir, "models") # /experiments/models
         
         # Create directories if they don't exist
         os.makedirs(self.models_dir, exist_ok=True)
@@ -64,6 +64,7 @@ class ModelRegistry:
         entry = {
             "timestamp": datetime.datetime.now().isoformat(),
             "model_path": model_path,
+            "model_class": model.__class__.__name__,  # Store class name (e.g., "CNN")
             "training_params": train_cfg,
             "model_architecture": model_cfg,
             "final_metrics": metrics
@@ -81,20 +82,38 @@ class ModelRegistry:
         return exp_id
     
 
-def load_model(self, exp_id, model_class, device):
-        """Helper to load a model by ID"""
+    def load_model(self, exp_id, device):
+        """
+        Load a model by experiment ID (automatically determines model class).
+        
+        Args:
+            exp_id (str): Experiment ID from registry
+            device (str or torch.device): Device to load model onto
+            
+        Returns:
+            model: Loaded model with weights restored
+        """
         if exp_id not in self.registry:
             raise ValueError(f"ID {exp_id} not found in registry.")
             
         entry = self.registry[exp_id]
         path = entry["model_path"]
         config = entry["model_architecture"]
+        model_class_name = entry["model_class"]
         
-        # Instantiate
+        # Dynamically import and get model class
+        import models
+        try:
+            model_class = getattr(models, model_class_name)
+        except AttributeError:
+            raise ValueError(f"Model class '{model_class_name}' not found in models module. "
+                           f"Available classes: {dir(models)}")
+        
+        # Instantiate model with saved config
         model = model_class(**config)
         
-        # Load Weights
-        checkpoint = torch.load(path, map_location=device)
+        # Load weights
+        checkpoint = torch.load(path, map_location=device, weights_only=False)
         model.load_state_dict(checkpoint['model_state_dict'])
         
         return model.to(device)

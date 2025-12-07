@@ -2,6 +2,12 @@ import torch
 import numpy as np
 from sklearn.metrics import f1_score
 
+# Import DEBUG_MODE from launch_training
+try:
+    from launch_training import DEBUG_MODE
+except ImportError:
+    DEBUG_MODE = False  # Fallback if imported elsewhere
+
 # -----------------------------
 # Training functions
 # -----------------------------
@@ -23,7 +29,8 @@ def train_one_epoch(model, train_loader, criterion, optimizer, scaler, device, l
     Returns:
         tuple: (average_loss, f1 score) - Training loss and f1 score for this epoch
     """
-    print(f"[DEBUG] train_one_epoch started", flush=True)
+    if DEBUG_MODE:
+        print(f"[DEBUG] train_one_epoch started", flush=True)
     model.train()  # Set model to training mode
 
     running_loss = 0.0
@@ -31,9 +38,10 @@ def train_one_epoch(model, train_loader, criterion, optimizer, scaler, device, l
     all_targets = []
 
     # Iterate through training batches of the data loader
-    print(f"[DEBUG] Starting batch iteration, total batches: {len(train_loader)}", flush=True)
+    if DEBUG_MODE:
+        print(f"[DEBUG] Starting batch iteration, total batches: {len(train_loader)}", flush=True)
     for batch_idx, (inputs, targets) in enumerate(train_loader):
-        if batch_idx == 0:
+        if DEBUG_MODE and batch_idx == 0:
             print(f"[DEBUG] Processing first batch, shape: {inputs.shape}", flush=True)
         # Move data to device (GPU/CPU)
         inputs, targets = inputs.to(device), targets.to(device)
@@ -44,7 +52,7 @@ def train_one_epoch(model, train_loader, criterion, optimizer, scaler, device, l
         # Forward pass with mixed precision (if CUDA available)
         with torch.amp.autocast(device_type=device.type, enabled=(device.type == 'cuda')):
             logits = model(inputs)
-            if batch_idx == 0:
+            if DEBUG_MODE and batch_idx == 0:
                 print(f"[DEBUG] Forward pass done, logits shape: {logits.shape}", flush=True)
             loss = criterion(logits, targets)
 
@@ -65,13 +73,14 @@ def train_one_epoch(model, train_loader, criterion, optimizer, scaler, device, l
         all_predictions.append(predictions.cpu().numpy())
         all_targets.append(targets.cpu().numpy())
         
-        if batch_idx == 0:
+        if DEBUG_MODE and batch_idx == 0:
             print(f"[DEBUG] First batch complete", flush=True)
         
-        if (batch_idx + 1) % 10 == 0:
+        if DEBUG_MODE and (batch_idx + 1) % 10 == 0:
             print(f"[DEBUG] Processed {batch_idx + 1}/{len(train_loader)} batches", flush=True)
 
-    print(f"[DEBUG] All batches processed, computing metrics...", flush=True)
+    if DEBUG_MODE:
+        print(f"[DEBUG] All batches processed, computing metrics...", flush=True)
     # Calculate epoch metrics
     epoch_loss = running_loss / len(train_loader.dataset)
     epoch_f1 = f1_score(
@@ -166,7 +175,8 @@ def fit(model, train_loader, val_loader, epochs, criterion, optimizer, scaler, d
     """
 
 
-    print("[DEBUG] fit() function started", flush=True)
+    if DEBUG_MODE:
+        print("[DEBUG] fit() function started", flush=True)
     
     # Initialize metrics tracking
     #keeps track of all values during training and validation
@@ -181,11 +191,13 @@ def fit(model, train_loader, val_loader, epochs, criterion, optimizer, scaler, d
         best_metric = float('-inf') if mode == 'max' else float('inf')
         best_epoch = 0
 
-    print(f"[DEBUG] Training {epochs} epochs...", flush=True)
+    if DEBUG_MODE:
+        print(f"[DEBUG] Training {epochs} epochs...", flush=True)
 
     # Main training loop: iterate through epochs
     for epoch in range(1, epochs + 1):
-        print(f"Starting epoch {epoch}...", flush=True)  # Debug line
+        if DEBUG_MODE:
+            print(f"Starting epoch {epoch}...", flush=True)  # Debug line
 
 
         # Forward pass through training data, compute gradients, update weights
@@ -193,7 +205,8 @@ def fit(model, train_loader, val_loader, epochs, criterion, optimizer, scaler, d
             model, train_loader, criterion, optimizer, scaler, device, l1_lambda, l2_lambda
         )
 
-        print(f"Epoch {epoch} train done", flush=True)  # Debug line
+        if DEBUG_MODE:
+            print(f"Epoch {epoch} train done", flush=True)  # Debug line
 
         # Evaluate model on validation data without updating weights
         val_loss, val_f1 = validate_one_epoch(
