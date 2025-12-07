@@ -202,8 +202,8 @@ def make_inference(best_model, test_loader, X_test, y_test, unique_labels, devic
     # Collect predictions and ground truth labels
     test_preds, test_targets = [], []
     with torch.no_grad():  # Disable gradient computation for inference
-        for xb, yb in test_loader:
-            xb = xb.to(device_obj)
+        for xb in test_loader:
+            xb = xb[0].to(device_obj)
 
             # Forward pass: get model predictions
             logits = best_model(xb)
@@ -211,14 +211,34 @@ def make_inference(best_model, test_loader, X_test, y_test, unique_labels, devic
 
             # Store batch results
             test_preds.append(preds)
-            test_targets.append(yb.numpy())
 
     # Combine all batches into single arrays
     test_preds = np.concatenate(test_preds)
-    test_targets = np.concatenate(test_targets)
+
+
+    # ✅ Dizionario che mappa le classi numeriche a quelle testuali
+    label_map = {0: "Luminal A", 1: "Luminal B", 2: "HER2(+)", 3:"Triple Negative" }
+
+    # ✅ Converte le predizioni numeriche nel formato testuale
+    submission_data = []
+    for uid, pred_num in test_preds.items():
+        label_str = label_map[pred_num]
+        submission_data.append((f"{int(uid):04d}", label_str))  # formatta l’ID come '000', '001', ecc.
+
+    # ✅ Crea il DataFrame per la submission
+    submission = pd.DataFrame(submission_data, columns=["sample_index", "label"])
+
+    # ✅ Salva il CSV
+    submission.to_csv("submission.csv", index=False)
+    print("📁 File 'submission.csv' creato con successo!")
+
+    # ✅ (Facoltativo) scarica il file in locale (solo in Colab)
+    from google.colab import files
+    files.download("submission.csv")
 
 
     # Calculate overall test accuracy
+    '''
     test_acc = accuracy_score(test_targets, test_preds)
     test_prec = precision_score(test_targets, test_preds, average='weighted')
     test_rec = recall_score(test_targets, test_preds, average='weighted')
@@ -226,12 +246,13 @@ def make_inference(best_model, test_loader, X_test, y_test, unique_labels, devic
     print(f"Accuracy over the test set: {test_acc:.4f}")
     print(f"Precision over the test set: {test_prec:.4f}")
     print(f"Recall over the test set: {test_rec:.4f}")
-    print(f"F1 score over the test set: {test_f1:.4f}")
+    print(f"F1 score over the test set: {test_f1:.4f}")'''
 
     # Generate confusion matrix for detailed error analysis
-    cm = confusion_matrix(test_targets, test_preds)
+    #cm = confusion_matrix(test_targets, test_preds)
 
     # Create numeric labels for heatmap annotation
+    '''
     labels = np.array([f"{num}" for num in cm.flatten()]).reshape(cm.shape)
 
     # Visualise confusion matrix
@@ -243,3 +264,4 @@ def make_inference(best_model, test_loader, X_test, y_test, unique_labels, devic
     plt.title('Confusion Matrix — Test Set')
     plt.tight_layout()
     plt.show()
+    '''

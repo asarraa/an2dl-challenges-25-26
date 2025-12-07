@@ -134,6 +134,11 @@ def start_training(model_name="CNN", model_params=None, training_params=None, de
     # Update with model overrides
     if model_params:
         current_model_cfg.update(model_params)
+    
+    # Override input_shape with the actual data shape passed as parameter
+    if data_input_shape is not None:
+        current_model_cfg['input_shape'] = data_input_shape
+        print(f"✓ Updated input_shape to: {data_input_shape}")
 
     train_parameters_summary = "\n".join([f"{k}: {v}" for k, v in current_train_cfg.items()])
     model_parameters_summary = "\n".join([f"{k}: {v}" for k, v in current_model_cfg.items()])
