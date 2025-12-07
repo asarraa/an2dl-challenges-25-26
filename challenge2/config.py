@@ -26,7 +26,7 @@ LOADER_PARAMS = {
 # 2. VANILLA CNN CONFIGURATION
 CNN_DEFAULTS = {
     "input_shape": (3, 32, 32),
-    "num_classes": 10,
+    "num_classes": 4,
     "num_blocks": 2,
     "convs_per_block": 1,
     "use_stride": False,
@@ -41,7 +41,7 @@ CNN_DEFAULTS = {
 # 3. EFFICIENTNET CONFIGURATION
 EFFICIENTNET_DEFAULTS = {
     "input_shape": (3, 32, 32),
-    "num_classes": 10,      # same as "output_shape"
+    "num_classes": 4,      # same as "output_shape"
     "filters": 32,
     "kernel_size": 3,
     "stack": 2,            

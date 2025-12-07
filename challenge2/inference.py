@@ -2,6 +2,7 @@
 SEED = 42
 
 import numpy as np
+import pandas as pd
 import torch
 torch.manual_seed(SEED)
 from torch import nn
@@ -189,18 +190,20 @@ def visualize(model, X, y, unique_labels, num_images=50, display_activations=Tru
             plt.show()
 
 
-def make_inference(best_model, test_loader, X_test, y_test, unique_labels, device_obj):
+def make_inference(best_model, test_loader, device_obj):
 
     # Dictionary to store layer activations via forward hooks
     activations = {}
 
     # Visualise model predictions and internal representations
     # Set display_all_conv_layers=True to show all conv layers, False for only last conv of each block
-    visualize(best_model, X_test, y_test, unique_labels, display_activations=True, display_all_conv_layers=False, device_obj)
+    #visualize(best_model, X_test, y_test, unique_labels, display_activations=True, display_all_conv_layers=False, device_obj)
+
+    df_test = pd.read_csv('test_patches.csv')
 
 
     # Collect predictions and ground truth labels
-    test_preds, test_targets = [], []
+    test_preds = []
     with torch.no_grad():  # Disable gradient computation for inference
         for xb in test_loader:
             xb = xb[0].to(device_obj)
@@ -214,6 +217,20 @@ def make_inference(best_model, test_loader, X_test, y_test, unique_labels, devic
 
     # Combine all batches into single arrays
     test_preds = np.concatenate(test_preds)
+
+
+    
+    from collections import Counter
+
+    final_preds = {}
+    
+
+    for image_id in np.unique(df_test['original_sample']):
+        
+    mask = user_ids == uid
+    user_preds = split_test_preds[mask]
+    majority_class = Counter(user_preds).most_common(1)[0][0]
+    final_preds[uid] = majority_class
 
 
     # ✅ Dizionario che mappa le classi numeriche a quelle testuali

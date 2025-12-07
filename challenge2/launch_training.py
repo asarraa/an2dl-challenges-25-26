@@ -15,7 +15,7 @@ import registry_module
 from training_engine import fit 
 
 # ===== DEBUG MODE =====
-DEBUG_MODE = False  # Set to True to enable debug prints
+DEBUG_MODE = True  # Set to True to enable debug prints
 
 # -----------------------------
 # Helper Functions
