@@ -19,11 +19,15 @@ class LazyImageDataset(torch.utils.data.Dataset):
     Args:
         csv_df (pd.DataFrame): DataFrame with 'sample_index' and 'label' columns
         images_dir (Path): Directory containing image files
+        masks_dir (Path, optional): Directory containing mask files (same names as images).
+        add_mask_channel (bool): If True, appends mask as 4th channel to the image.
         transform (callable, optional): Transforms to apply
     """
-    def __init__(self, csv_df, images_dir, transform=None):
+    def __init__(self, csv_df, images_dir, masks_dir=None, add_mask_channel=False, transform=None):
         self.csv_df = csv_df.reset_index(drop=True)
         self.images_dir = Path(images_dir)
+        self.masks_dir = Path(masks_dir) if masks_dir else None
+        self.add_mask_channel = add_mask_channel
         self.transform = transform
         
         # Base transform: convert to tensor
@@ -50,6 +54,18 @@ class LazyImageDataset(torch.utils.data.Dataset):
         
         # Convert BGR to RGB
         image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+
+        # Optionally load mask and append as 4th channel
+        if self.add_mask_channel:
+            if self.masks_dir is None:
+                raise ValueError("masks_dir must be provided when add_mask_channel=True")
+            mask_path = self.masks_dir / img_name
+            mask = cv2.imread(str(mask_path), cv2.IMREAD_GRAYSCALE)
+            if mask is None:
+                raise FileNotFoundError(f"Could not load mask {mask_path}")
+            if mask.shape[:2] != image.shape[:2]:
+                mask = cv2.resize(mask, (image.shape[1], image.shape[0]), interpolation=cv2.INTER_NEAREST)
+            image = np.dstack((image, mask))
         
         # Convert to PIL for transforms v2
         image_pil = Image.fromarray(image)
@@ -84,7 +100,7 @@ def make_loader(ds, batch_size, shuffle, drop_last):
     )
 
 
-def get_loaders(augmentation=None, batch_size=LOADER_PARAMS["batch_size"]):
+def get_loaders(augmentation=None, batch_size=LOADER_PARAMS["batch_size"], base_path=None, add_mask_channel=False):
     """
     Create train and validation dataloaders using lazy loading (no RAM overload).
     
@@ -92,8 +108,9 @@ def get_loaders(augmentation=None, batch_size=LOADER_PARAMS["batch_size"]):
         train_loader, val_loader, input_shape
     """
     # Paths
-    base_path = Path("../../drive/MyDrive/AN2DL_Challenge2-TheBigBatchTheory/data/dataset/testpreprocessing")
+    base_path = Path(base_path) if base_path else Path("../../drive/MyDrive/AN2DL_Challenge2-TheBigBatchTheory/data/dataset/testpreprocessing")
     images_dir = base_path / "train" / "images"
+    masks_dir = base_path / "train" / "masks" if add_mask_channel else None
     csv_path = base_path / "train_patches.csv"
     
     # Load CSV metadata (small, fits in RAM)
@@ -112,8 +129,17 @@ def get_loaders(augmentation=None, batch_size=LOADER_PARAMS["batch_size"]):
     )
     
     # Determine input shape from one sample
-    sample_img = cv2.imread(str(images_dir / df.iloc[0]['sample_index']))
-    input_shape = (sample_img.shape[2], sample_img.shape[0], sample_img.shape[1])  # (C, H, W)
+    sample_path = images_dir / df.iloc[0]['sample_index']
+    sample_img = cv2.imread(str(sample_path))
+    if sample_img is None:
+        raise FileNotFoundError(f"Could not load sample image {sample_path}")
+    if add_mask_channel:
+        sample_mask = cv2.imread(str(masks_dir / df.iloc[0]['sample_index']), cv2.IMREAD_GRAYSCALE)
+        if sample_mask is None:
+            raise FileNotFoundError(f"Could not load sample mask {masks_dir / df.iloc[0]['sample_index']}")
+        input_shape = (4, sample_img.shape[0], sample_img.shape[1])  # (C, H, W) with mask
+    else:
+        input_shape = (sample_img.shape[2], sample_img.shape[0], sample_img.shape[1])  # (C, H, W)
     
     # Define augmentations
     if augmentation is None:
@@ -127,8 +153,8 @@ def get_loaders(augmentation=None, batch_size=LOADER_PARAMS["batch_size"]):
         train_augmentation = augmentation
     
     # Create lazy datasets
-    train_ds = LazyImageDataset(train_df, images_dir, transform=train_augmentation)
-    val_ds = LazyImageDataset(val_df, images_dir, transform=None)
+    train_ds = LazyImageDataset(train_df, images_dir, masks_dir=masks_dir, add_mask_channel=add_mask_channel, transform=train_augmentation)
+    val_ds = LazyImageDataset(val_df, images_dir, masks_dir=masks_dir, add_mask_channel=add_mask_channel, transform=None)
     
     # Create loaders
     train_loader = make_loader(train_ds, batch_size=batch_size, shuffle=True, drop_last=False)
