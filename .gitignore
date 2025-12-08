@@ -3,6 +3,7 @@ train_data/
 train_labels.csv
 masks/
 training/
+arrays/
 #ignore what is usually ignored
 .DS_Store
 *.log
