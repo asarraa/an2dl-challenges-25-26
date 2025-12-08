@@ -40,7 +40,16 @@ def instantiate_model(model_name, batch_size, current_model_cfg, data_input_shap
         model = models.CNN(**current_model_cfg)
     elif model_name == "EfficientNet":
         model = models.EfficientNetModel(**current_model_cfg)
-
+    
+    elif model_name == "HistologyResNet":
+        # Rimuoviamo input_shape se è stato aggiunto al config, 
+        # perché HistologyResNet non lo accetta nel costruttore __init__
+        cfg_copy = current_model_cfg.copy()
+        if 'input_shape' in cfg_copy:
+            del cfg_copy['input_shape']
+            
+        model = models.HistologyResNet(**cfg_copy)
+    
     # Move model to device BEFORE calling summary (torchsummary requires this)
     model = model.to(device_obj)
 
@@ -130,7 +139,17 @@ def start_training(model_name="CNN", model_params=None, training_params=None, de
         current_model_cfg = config.CNN_DEFAULTS.copy()
     elif model_name == "EfficientNet":
         current_model_cfg = config.EFFICIENTNET_DEFAULTS.copy()
-    
+    elif model_name == "HistologyResNet":
+        # Se hai messo RESNET_DEFAULTS in config.py usa quello, 
+        # altrimenti definiscilo qui al volo:
+        if hasattr(config, 'RESNET_DEFAULTS'):
+            current_model_cfg = config.RESNET_DEFAULTS.copy()
+        else:
+            current_model_cfg = {
+                "num_classes": 4, 
+                "use_pretrained": True, 
+                "backbone": "resnet18"
+            }
     # Update with model overrides
     if model_params:
         current_model_cfg.update(model_params)

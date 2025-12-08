@@ -47,3 +47,11 @@ EFFICIENTNET_DEFAULTS = {
     "stack": 2,            
     "blocks": 2
 }
+
+# 4. RESNET CONFIGURATION
+
+RESNET_DEFAULTS = {
+    "num_classes": 4,
+    "use_pretrained": True,
+    "backbone": "resnet18"
+}

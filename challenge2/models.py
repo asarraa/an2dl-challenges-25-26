@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import config
+import torchvision.models as models
 
 
 # -----------------------------
@@ -256,3 +257,64 @@ class EfficientNetModel(nn.Module):
         return F.softmax(x, dim=1)
 
 
+class HistologyResNet(nn.Module):
+    def __init__(self, num_classes=4, use_pretrained=True, backbone='resnet18'):
+        """
+        Modello basato su ResNet che accetta input a 4 canali (RGB + Maschera).
+        Usa i pesi pre-addestrati di ImageNet per i canali RGB e inizializza
+        il canale della maschera in modo intelligente.
+        """
+        super().__init__()
+        
+        # 1. Carichiamo la backbone pre-addestrata
+        # ResNet18 è leggera e veloce. Se hai molta GPU usa 'resnet50'
+        if backbone == 'resnet18':
+            self.model = models.resnet18(weights='DEFAULT' if use_pretrained else None)
+            last_channel_in = self.model.fc.in_features
+        elif backbone == 'resnet50':
+            self.model = models.resnet50(weights='DEFAULT' if use_pretrained else None)
+            last_channel_in = self.model.fc.in_features
+        else:
+            raise ValueError("Backbone supportata: resnet18, resnet50")
+
+        # ---------------------------------------------------------
+        # 2. CHIRURGIA DEL PRIMO LIVELLO (Input Layer Surgery)
+        # ---------------------------------------------------------
+        # Il layer originale è: Conv2d(3, 64, kernel_size=7, stride=2, padding=3, bias=False)
+        original_conv1 = self.model.conv1
+        
+        # Creiamo un nuovo layer identico ma con in_channels=4
+        new_conv1 = nn.Conv2d(
+            in_channels=4, 
+            out_channels=original_conv1.out_channels, 
+            kernel_size=original_conv1.kernel_size, 
+            stride=original_conv1.stride, 
+            padding=original_conv1.padding, 
+            bias=original_conv1.bias
+        )
+
+        if use_pretrained:
+            # Strategia di Inizializzazione dei Pesi:
+            with torch.no_grad():
+                # A. Copiamo i pesi originali RGB (canali 0,1,2) nel nuovo layer
+                new_conv1.weight[:, :3, :, :] = original_conv1.weight
+                
+                # B. Per il 4° canale (Maschera), non iniziamo da zero o random puro.
+                # Una buona strategia è usare la media dei pesi RGB. 
+                # Questo permette al modello di "attivarsi" subito anche sulla maschera.
+                new_conv1.weight[:, 3, :, :] = torch.mean(original_conv1.weight, dim=1)
+
+        # Sostituiamo il layer nel modello
+        self.model.conv1 = new_conv1
+        
+        # ---------------------------------------------------------
+        # 3. CHIRURGIA DELLA TESTA (Classification Head)
+        # ---------------------------------------------------------
+        # Sostituiamo l'ultimo layer fully connected per matchare le nostre classi
+        self.model.fc = nn.Sequential(
+            nn.Dropout(p=0.3), # Aggiungiamo un po' di dropout per evitare overfitting
+            nn.Linear(last_channel_in, num_classes)
+        )
+
+    def forward(self, x):
+        return self.model(x)
