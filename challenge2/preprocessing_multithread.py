@@ -380,9 +380,10 @@ def main():
     arrays_dir = processed_dir / "arrays"
 
     # Create directories
-    print("Example: Cleaning output directories...")
     for d in [out_train_img, out_train_mask, out_test_img, out_test_mask, discard_dir, arrays_dir]:
-        if d.exists(): shutil.rmtree(d)
+        if d.exists(): 
+            shutil.rmtree(d)
+            print(f"[DEBUG] preprocessing_multithread: Cleaning output directory {d}!!!!!")
         d.mkdir(parents=True, exist_ok=True)
 
     # -------------------------------------------------------------------------

@@ -365,7 +365,9 @@ def main():
 
     # Clean up previous runs and create directories
     for d in [out_train_img, out_train_mask, out_test_img, out_test_mask, discard_dir, arrays_dir]:
-        if d.exists(): shutil.rmtree(d)
+        if d.exists(): 
+            shutil.rmtree(d)
+            print(f"[DEBUG] testing_pre: Cleaning output directory {d}!!!!!")
         d.mkdir(parents=True, exist_ok=True)
 
     # -------------------------------------------------------------------------
