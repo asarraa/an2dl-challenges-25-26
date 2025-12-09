@@ -569,6 +569,8 @@ def test_selecting_images():
         if contains_slime(img_bgr):
             #print("\n", img_path.stem)
             selected_images.append(img_path.stem)
+            if ((img_path == "img_0173.png") or (img_path == "img_0202.png") or (img_path == "img_0352.png")):
+                print(f"\nMacchia verde {img_path.stem}")# --> cls: {cls}, ratio_tissue: {ratio_tissue:.3f}, ratio_shrek: {ratio_shrek:.3f}, shrek_dominance: {shrek_dominance:.3f}")
             continue
         cls, ratio_tissue, ratio_shrek, shrek_dominance = analyze_image_memory(img_bgr)
         if cls == "SHREK":
