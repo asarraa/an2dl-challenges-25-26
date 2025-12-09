@@ -12,12 +12,12 @@ import config
 
 # Size of the square patch extracted from the slide.
 # 512x512 is a good trade-off between context and resolution.
-TILE_SIZE = 512
+TILE_SIZE = 224
 
 # Stride determines the overlap between patches.
 # A stride of 256 (half of TILE_SIZE) means 50% overlap.
 # This acts as Test-Time Augmentation (TTA) ensuring every cell is centered at least once.
-STRIDE = 256
+STRIDE = 112
 
 # HSV Thresholds for detecting "Glass" (Background).    
 # Tissue usually has higher saturation. Background is white/grey (Low Saturation, High Value).
@@ -181,7 +181,7 @@ def analyze_image_memory(img_bgr):
 # 4. TILING ENGINE
 # =============================================================================
 
-def process_single_slide(img_path, mask_path, label, output_img_dir, output_mask_dir, arrays_dir, is_test_set=False):
+def process_single_slide(img_path, mask_path, label, output_img_dir, output_mask_dir, is_test_set=False):
     """
     Orchestrates the processing pipeline for a single whole-slide image (WSI) or ROI.
     Pipeline: Load -> Remove Slime -> Check Quality (Shrek) -> Tile -> Save.
@@ -226,7 +226,6 @@ def process_single_slide(img_path, mask_path, label, output_img_dir, output_mask
     tiles_data = []
     h, w, _ = img.shape
     base_name = img_path.stem # e.g., "img_001"
-    img_array = []
 
     # Iterate over the image with the defined stride
     for y in range(0, h, STRIDE):
@@ -271,7 +270,6 @@ def process_single_slide(img_path, mask_path, label, output_img_dir, output_mask
                 # Save to disk
                 cv2.imwrite(str(output_img_dir / tile_name), img_crop)
                 cv2.imwrite(str(output_mask_dir / tile_name), mask_crop)
-                add_to_array(img_crop, mask_crop, img_array) #add both image and mask to 4channel image (array numpy)
 
                 # Prepare metadata for CSV
                 row = {
@@ -288,23 +286,7 @@ def process_single_slide(img_path, mask_path, label, output_img_dir, output_mask
             
     if len(tiles_data) == 0:
         print(f"No valid tiles extracted from {img_path.name} after processing.")
-    if len(img_array)>0:
-        np.save(arrays_dir / f"{base_name}.npy", np.array(img_array))
     return tiles_data
-
-# ============================================================================
-# Costruzione array npy da salvare
-# ============================================================================
-
-def add_to_array(image, mask, array):
-    """
-    Aggiunge immagine e maschera a un array esistente.
-    """
-    image = image[..., ::-1]
-    mask = mask[..., np.newaxis]
-    img4d = np.dstack((image, mask))
-    array.append((img4d))
-    return
 
 # =============================================================================
 # 5. MAIN EXECUTION
@@ -325,12 +307,10 @@ def main(do_test=True, preprocess_name=None):
     #Train
     out_train_img = single_preprocessing_dir / "train/images"
     out_train_mask = single_preprocessing_dir / "train/masks"
-    train_arrays_dir = single_preprocessing_dir / "train/arrays"
     
     #Test
     out_test_img = single_preprocessing_dir / "test/images"
     out_test_mask = single_preprocessing_dir / "test/masks"
-    test_arrays_dir = single_preprocessing_dir / "test/arrays"
 
     '''
     data --> BASE_DATA
@@ -356,14 +336,14 @@ def main(do_test=True, preprocess_name=None):
                 ---mask
     '''
     # Clean up previous runs and create directories
-    for d in [out_train_img, out_train_mask, train_arrays_dir]:
+    for d in [out_train_img, out_train_mask]:
         if d.exists(): 
             shutil.rmtree(d)
             print(f"[DEBUG] testing_pre: Cleaning output directory {d}!!!!!")
         d.mkdir(parents=True, exist_ok=True)
 
     if do_test:
-        for d in [out_test_img, out_test_mask, test_arrays_dir]:
+        for d in [out_test_img, out_test_mask]:
             if d.exists(): 
                 shutil.rmtree(d)
                 print(f"[DEBUG] testing_pre: Cleaning output directory {d}!!!!!")
@@ -410,7 +390,7 @@ def main(do_test=True, preprocess_name=None):
             # Process the slide
             res = process_single_slide(
                 img_path, mask_path, label, 
-                out_train_img, out_train_mask, train_arrays_dir,
+                out_train_img, out_train_mask,
                 is_test_set=False,
             )
             
@@ -450,7 +430,6 @@ def process_test(preprocess_name=None):
     #output directories
     out_test_img = single_preprocessing_dir / "test/images"
     out_test_mask = single_preprocessing_dir / "test/masks"
-    test_arrays_dir = single_preprocessing_dir / "test/arrays"
 
     print("\n>>> FASE 2: Processing TEST SET (Weights Only - No Labels)")
     test_dir = config.TEST_DIR
@@ -475,7 +454,7 @@ def process_test(preprocess_name=None):
             # Process the slide (Test Mode: label=None, is_test_set=True)
             res = process_single_slide( #call process single slide with mask and corresponding mask
                 img_path, mask_path, None, 
-                out_test_img, out_test_mask, test_arrays_dir, #directories
+                out_test_img, out_test_mask, #directories
                 is_test_set=True
             )
         
