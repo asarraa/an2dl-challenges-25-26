@@ -448,55 +448,51 @@ def main():
         print("⚠️ train_data folder or train_labels.csv not found.")
 
 
-    # -------------------------------------------------------------------------
-    # FASE 2: TEST SET PROCESSING
-    # -------------------------------------------------------------------------
-    # print("\n>>> FASE 2: Processing TEST SET (Weights Only - No Labels)")
+ #-------------------------------------------------------------------------
+ #FASE 2: TEST SET PROCESSING
+ #-------------------------------------------------------------------------
+def process_test(test_dir, out_test_img, out_test_mask, discard_dir, processed_dir):
+    print("\n>>> FASE 2: Processing TEST SET (Weights Only - No Labels)")
+    if test_dir.exists():
+        test_rows = []
     
-    # if test_dir.exists():
-    #     test_rows = []
+        # Find all images.
+        # SORTING: We gather all files first, then sort them to ensure ascending order.
+        all_files = sorted(list(test_dir.glob("**/img_*.*")))
+    
+        for img_path in tqdm(all_files, desc="Test Slides"):
+            # Skip if glob accidentally picked up a mask file
+            if "mask" in img_path.name: continue 
         
-    #     # Find all images.
-    #     # SORTING: We gather all files first, then sort them to ensure ascending order.
-    #     all_files = sorted(list(test_dir.glob("**/img_*.*")))
+            # Find corresponding mask
+            id_part = img_path.stem.replace("img_", "")
+            mask_path = img_path.parent / f"mask_{id_part}{img_path.suffix}"
+            if not mask_path.exists():
+                mask_path = img_path.parent / f"mask_{id_part}.png"
         
-    #     for img_path in tqdm(all_files, desc="Test Slides"):
-    #         # Skip if glob accidentally picked up a mask file
-    #         if "mask" in img_path.name: continue 
-            
-    #         # Find corresponding mask
-    #         id_part = img_path.stem.replace("img_", "")
-    #         mask_path = img_path.parent / f"mask_{id_part}{img_path.suffix}"
-    #         if not mask_path.exists():
-    #             mask_path = img_path.parent / f"mask_{id_part}.png"
-            
-    #         if not mask_path.exists(): continue
-
-    #         # Process the slide (Test Mode: label=None, is_test_set=True)
-    #         res = process_single_slide(
-    #             img_path, mask_path, None, 
-    #             out_test_img, out_test_mask, discard_dir, 
-    #             is_test_set=True
-    #         )
-            
-    #         if isinstance(res, list): 
-    #             test_rows.extend(res)
-
-    #     # Save the final CSV for testing
-    #     if test_rows:
-    #         test_df = pd.DataFrame(test_rows)
-    #         # Reorder columns (No Label column here)
-    #         cols = ['sample_index', 'original_sample', 'tumor_coverage']
-    #         test_df = test_df[cols]
-    #         test_df.to_csv(processed_dir / "test_patches.csv", index=False)
-    #         print(f"✅ Test Tiles Saved: {len(test_rows)}")
-    #     else:
-    #         print("⚠️ No tiles generated for Test Set.")
-    # else:
-    #     print("⚠️ test_data folder not found.")
-
-# if __name__ == "__main__":
-#     main()
+            if not mask_path.exists(): continue
+            # Process the slide (Test Mode: label=None, is_test_set=True)
+            res = process_single_slide(
+                img_path, mask_path, None, 
+                out_test_img, out_test_mask, discard_dir, 
+                is_test_set=True
+            )
+        
+            if isinstance(res, list): 
+                test_rows.extend(res)
+        # Save the final CSV for testing
+        if test_rows:
+            test_df = pd.DataFrame(test_rows)
+            # Reorder columns (No Label column here)
+            cols = ['sample_index', 'original_sample', 'tumor_coverage']
+            test_df = test_df[cols]
+            test_df.to_csv(processed_dir / "test_patches.csv", index=False)
+            print(f"✅ Test Tiles Saved: {len(test_rows)}")
+        else:
+            print("⚠️ No tiles generated for Test Set.")
+    else:
+        print("⚠️ test_data folder not found.")
+        
 
 def test_selecting_images():
     base_data = Path("../../drive/MyDrive/AN2DL_Challenge2-TheBigBatchTheory/data/dataset")
@@ -509,10 +505,12 @@ def test_selecting_images():
         fname = row['sample_index']
         img_path = train_dir / fname
         img_bgr = load_image_cv2(img_path)
+        if contains_slime(img_bgr):
+            selected_images.append(img_path.stem)
+            continue
         cls, _, _, _ = analyze_image_memory(img_bgr)
         if cls == "SHREK":
-            #print(f"Found: {img_path.name} classified as SHREK")
             selected_images.append(img_path.stem)
     
-    print("Selected Images:", selected_images)
+    print("\nSelected Images:", selected_images)
     return
