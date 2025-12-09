@@ -1,29 +1,19 @@
-# Importing OpenCV for image loading and processing
 import cv2
-# OS utilities for system info and file manipulation
 import os
-# Numpy for array operations
 import numpy as np
-# PyTorch main library for tensors and neural network utilities
 import torch
-# Pandas for reading and handling CSV metadata
 import pandas as pd
-# Pillow for converting arrays to PIL Image objects
 from PIL import Image
-# Pathlib for cleaner filesystem path manipulation
 from pathlib import Path
-# Torchvision v2 transforms (optimized image transforms)
 from torchvision.transforms import v2 as transforms
-# Scikit-learn utility for splitting dataset into train/val
 from sklearn.model_selection import train_test_split
-# PyTorch DataLoader for batching and multiprocessing loading
 from torch.utils.data import DataLoader
-# External configuration file containing LOADER_PARAMS dict
-from config import LOADER_PARAMS
+import config
 
 # Global random seed for reproducibility
 SEED = 42
 
+LOADER_PARAMS = config.LOADER_PARAMS
 
 class LazyImageDataset(torch.utils.data.Dataset):
     """
@@ -140,12 +130,12 @@ def get_loaders(augmentation=None, batch_size=LOADER_PARAMS["batch_size"], base_
         train_loader, val_loader, input_shape
     """
     # Base dataset path; fallback to default if none provided
-    base_path = Path(base_path) if base_path else Path("../../drive/MyDrive/AN2DL_Challenge2-TheBigBatchTheory/data/dataset/testpreprocessing")
+    train_path = config.TRAIN_DIR
     # Subdirectories containing training images and (optionally) masks
-    images_dir = base_path / "train" / "images"
-    masks_dir = base_path / "train" / "masks" if add_mask_channel else None
+    images_dir = train_path / "images"
+    masks_dir = train_path / "masks" if add_mask_channel else None
     # Path to CSV that maps image filenames to labels
-    csv_path = base_path / "train_patches.csv"
+    csv_path = train_path / "train_patches.csv"
     
     # Read CSV metadata into memory (very small footprint)
     df = pd.read_csv(csv_path)
@@ -209,14 +199,14 @@ def get_loaders(augmentation=None, batch_size=LOADER_PARAMS["batch_size"], base_
     return train_loader, val_loader, input_shape
 
 
-def get_test_loaders():
+def get_test_loaders(add_mask_channel=False, augmentation=None, batch_size=LOADER_PARAMS["batch_size"]):
     # Base dataset path; fallback to default if none provided
-    base_path = Path(base_path) if base_path else Path("../../drive/MyDrive/AN2DL_Challenge2-TheBigBatchTheory/data/dataset/testpreprocessing")
+    test_path = config.TEST_DIR
     # Subdirectories containing training images and (optionally) masks
-    images_dir = base_path / "train" / "images"
-    masks_dir = base_path / "train" / "masks" if add_mask_channel else None
+    images_dir = test_path / "images"
+    masks_dir = test_path / "masks" if add_mask_channel else None
     # Path to CSV that maps image filenames to labels
-    csv_path = base_path / "train_patches.csv"
+    csv_path = test_path / "train_patches.csv"
     
     # Read CSV metadata into memory (very small footprint)
     df = pd.read_csv(csv_path)

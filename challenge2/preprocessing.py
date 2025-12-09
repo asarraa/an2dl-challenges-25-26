@@ -193,7 +193,7 @@ def process_single_slide(img_path, mask_path, label, output_img_dir, is_test_set
 
     # --- Step 3: Tiling (Patch Extraction) ---
     tiles_data = []
-    h, w, _ = img.shape
+    h, w, _ = img_bgr.shape
     base_name = img_path.stem # e.g., "img_001"
     
     # Multi-channel Masking:
