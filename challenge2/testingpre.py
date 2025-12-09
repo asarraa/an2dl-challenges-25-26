@@ -5,7 +5,6 @@ import pandas as pd
 from pathlib import Path
 from tqdm import tqdm
 import config
-import os
 
 # =============================================================================
 # CONFIGURATION PARAMETERS
@@ -28,10 +27,6 @@ HSV_V_THRESH = 200
 # Maximum allowed ratio of background pixels in a patch.
 # If more than 50% of the patch is background (glass), it is discarded.
 BACKGROUND_MAX_RATIO = 0.5 
-
-
-BASE_DATA = Path("../../drive/MyDrive/AN2DL_Challenge2-TheBigBatchTheory/data")
-
 
 
 # =============================================================================
@@ -83,53 +78,6 @@ def contains_slime(img_bgr, threshold=50):
     
     # Determine if the count exceeds the threshold
     return green_pixel_count > threshold
-                       
-# def process_slime_removal(img_bgr, mask_gray):
-#     """
-#     Detects and removes green marker ink ("slime") from the histology image.
-    
-#     Why: Green ink acts as an artifact that can confuse the CNN.
-#     How: Detects green pixels in HSV space and applies Inpainting.
-    
-#     Args:
-#         img_bgr (np.array): Original image.
-#         mask_gray (np.array): Original tumor mask.
-        
-#     Returns:
-#         tuple: (img_clean, mask_clean) - Processed image and updated mask.
-#     """
-#     # Convert BGR to HSV color space to easily isolate the green color.
-#     hsv = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2HSV)
-    
-#     # Define the lower and upper bounds for the green color (Marker Ink).
-#     lower_green = np.array([35, 50, 50])
-#     upper_green = np.array([90, 255, 255])
-    
-#     # Create a binary mask where green pixels are white (255).
-#     mask_slime = cv2.inRange(hsv, lower_green, upper_green)
-
-#     # Refine the slime mask:
-#     # 1. Find contours to identify blobs.
-#     # 2. Fill holes inside the blobs to make them solid.
-#     contours, _ = cv2.findContours(mask_slime, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-#     mask_solid = np.zeros_like(mask_slime)
-#     cv2.drawContours(mask_solid, contours, -1, (255), thickness=cv2.FILLED)
-    
-#     # 3. Dilate the mask slightly to ensure we cover the edges of the ink.
-#     kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
-#     mask_solid_final = cv2.dilate(mask_solid, kernel, iterations=1)
-
-#     # Apply Telea Inpainting: Replaces the masked "slime" pixels with 
-#     # plausible texture derived from the surrounding neighborhood.
-#     img_clean = cv2.inpaint(img_bgr, mask_solid_final, 3, cv2.INPAINT_TELEA)
-    
-#     # Update the tumor mask:
-#     # If a tumor region was covered by slime, we remove it (set to 0) 
-#     # because the inpainting might have generated fake tissue.
-#     mask_clean = mask_gray.copy()
-#     mask_clean[mask_solid_final == 255] = 0
-    
-#     return img_clean, mask_clean
 
 def is_patch_valid_hsv(img_crop):
     """
@@ -344,7 +292,6 @@ def process_single_slide(img_path, mask_path, label, output_img_dir, output_mask
         np.save(arrays_dir / f"{base_name}.npy", np.array(img_array))
     return tiles_data
 
-
 # ============================================================================
 # Costruzione array npy da salvare
 # ============================================================================
@@ -385,8 +332,6 @@ def main(do_test=True, preprocess_name=None):
     out_test_mask = single_preprocessing_dir / "test/masks"
     test_arrays_dir = single_preprocessing_dir / "test/arrays"
 
-    # Discarded
-    #discard_dir = single_preprocessing_dir / "discarded"
     '''
     data --> BASE_DATA
     -dataset --> base_dataset
@@ -410,8 +355,6 @@ def main(do_test=True, preprocess_name=None):
                 ---images
                 ---mask
     '''
-
-
     # Clean up previous runs and create directories
     for d in [out_train_img, out_train_mask, train_arrays_dir]:
         if d.exists(): 
@@ -426,7 +369,6 @@ def main(do_test=True, preprocess_name=None):
                 print(f"[DEBUG] testing_pre: Cleaning output directory {d}!!!!!")
             d.mkdir(parents=True, exist_ok=True)
 
-    
 
     # -------------------------------------------------------------------------
     # FASE 1: TRAINING SET PROCESSING
@@ -475,7 +417,6 @@ def main(do_test=True, preprocess_name=None):
             # If successful (list returned), add rows to the dataset
             if isinstance(res, list): 
                 train_rows.extend(res)
-        
 
         # Save the final CSV for training
         if train_rows:
@@ -493,7 +434,6 @@ def main(do_test=True, preprocess_name=None):
     if do_test and config.TEST_DIR.exists():
         process_test(preprocess_name)
 
-
  #-------------------------------------------------------------------------
  #FASE 2: TEST SET PROCESSING
  #-------------------------------------------------------------------------
@@ -504,8 +444,6 @@ def process_test(preprocess_name=None):
         print("[ERROR] Give a name to this preprocessing")
         return
 
-
-
     #subfolder of preprocessed
     single_preprocessing_dir = config.BASE_PREPROCESSED / preprocess_name
 
@@ -514,11 +452,6 @@ def process_test(preprocess_name=None):
     out_test_mask = single_preprocessing_dir / "test/masks"
     test_arrays_dir = single_preprocessing_dir / "test/arrays"
 
-    # Discarded
-    discard_dir = single_preprocessing_dir / "discarded"
-
-    
-    
     print("\n>>> FASE 2: Processing TEST SET (Weights Only - No Labels)")
     test_dir = config.TEST_DIR
     if test_dir.exists():
@@ -542,7 +475,7 @@ def process_test(preprocess_name=None):
             # Process the slide (Test Mode: label=None, is_test_set=True)
             res = process_single_slide( #call process single slide with mask and corresponding mask
                 img_path, mask_path, None, 
-                out_test_img, out_test_mask, discard_dir, test_arrays_dir, #directories
+                out_test_img, out_test_mask, test_arrays_dir, #directories
                 is_test_set=True
             )
         
@@ -560,25 +493,3 @@ def process_test(preprocess_name=None):
             print("⚠️ No tiles generated for Test Set.")
     else:
         print("⚠️ test_data folder not found.")
-
-
-def prepare_test():
-    base_dataset = BASE_DATA / "dataset"
-
-    # Output Directories
-    single_preprocessing_dir = base_dataset / "testpreprocessing"
-    
-    # Create specific subdirectories for organized output
-    out_test_img = single_preprocessing_dir / "test/images"
-    out_test_mask = single_preprocessing_dir / "test/masks"
-    discard_dir = single_preprocessing_dir / "discarded_shrek"
-    test_arrays_dir = single_preprocessing_dir / "test_arrays"
-
-    # Clean up previous runs and create directories
-    for d in [out_test_img, out_test_mask, discard_dir, test_arrays_dir]:
-        if d.exists(): 
-            shutil.rmtree(d)
-            print(f"[DEBUG] testing_pre: Cleaning output directory {d}!!!!!")
-        d.mkdir(parents=True, exist_ok=True)
-        
-    process_test(base_dataset / "test_data", out_test_img, out_test_mask, test_arrays_dir, discard_dir, single_preprocessing_dir)
