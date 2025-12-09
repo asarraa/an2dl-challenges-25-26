@@ -581,7 +581,7 @@ def test_selecting_images():
     #             print(f"\n{img_path.stem} --> cls: {cls}, ratio_tissue: {ratio_tissue:.3f}, ratio_shrek: {ratio_shrek:.3f}, shrek_dominance: {shrek_dominance:.3f}")
     #         selected_images.append(img_path.stem)
             
-    for row in labels_df.iterrows():
+    for row in labels_df.itertuples():
         fname = row['sample_index']
         img_path = config.TRAIN_DIR / fname
         img_bgr = load_image_cv2(img_path)
