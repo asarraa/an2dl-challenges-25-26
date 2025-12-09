@@ -55,12 +55,13 @@ EFFICIENTNET_DEFAULTS = {
 RESNET_DEFAULTS = {
     "num_classes": 4,
     "use_pretrained": True,
-    "backbone": "resnet18"
+    "backbone": "resnet18",
+    "input_channels": 4  # default expects RGB + mask; override to 3 when training on RGB-only tiles
 }
 
 
 # 5. DIRECTORIES
-BASE_DATA = Path("../../drive/MyDrive/AN2DL_Challenge2-TheBigBatchTheory/data")
+BASE_DATA = Path("./data")
 BASE_DATASET = BASE_DATA / "dataset"
 BASE_PREPROCESSED = BASE_DATA / "preprocessed"
 

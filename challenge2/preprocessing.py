@@ -197,7 +197,9 @@ def process_single_slide(img_path, mask_path, label, output_img_dir, is_test_set
     base_name = img_path.stem # e.g., "img_001"
     
     # Multi-channel Masking:
-    img = (img_bgr * mask[:, :, np.newaxis]).astype(np.uint8)
+    # Dividi per 255 per avere 0 e 1, poi moltiplica
+    mask_boolean = (mask / 255).astype(np.uint8)
+    img = (img_bgr * mask_boolean[:, :, np.newaxis]).astype(np.uint8)
 
     # Iterate over the image with the defined stride
     for y in range(0, h, STRIDE):
@@ -406,3 +408,6 @@ def process_test(preprocess_name=None):
             print("⚠️ No tiles generated for Test Set.")
     else:
         print("⚠️ test_data folder not found.")
+        
+if __name__ == "__main__":
+    preprocess(do_test=True, preprocess_name="preprocess_v1")
