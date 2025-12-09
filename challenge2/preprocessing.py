@@ -197,7 +197,7 @@ def process_single_slide(img_path, mask_path, label, output_img_dir, is_test_set
     base_name = img_path.stem # e.g., "img_001"
     
     # Multi-channel Masking:
-    img = img_bgr * mask[:,:,np.newaxis]
+    img = (img_bgr * mask[:, :, np.newaxis]).astype(np.uint8)
 
     # Iterate over the image with the defined stride
     for y in range(0, h, STRIDE):
