@@ -562,24 +562,44 @@ def test_selecting_images():
     labels_df = pd.read_csv(config.LABELS_CSV)
     labels_df = labels_df.sort_values(by='sample_index')
     selected_images = []
-    for _, row in tqdm(labels_df.iterrows(), total=len(labels_df), desc="Selecting Slides"):
+    # for _, row in tqdm(labels_df.iterrows(), total=len(labels_df), desc="Selecting Slides"):
+    #     fname = row['sample_index']
+    #     img_path = config.TRAIN_DIR / fname
+    #     img_bgr = load_image_cv2(img_path)
+        
+    #     problems = ["img_0173.png", "img_0202.png", "img_0352.png"]
+    #     if contains_slime(img_bgr):
+    #         #print("\n", img_path.stem)
+    #         selected_images.append(img_path.stem)
+    #         if img_path in problems:
+    #             print(f"\nMacchia verde {img_path.stem}")# --> cls: {cls}, ratio_tissue: {ratio_tissue:.3f}, ratio_shrek: {ratio_shrek:.3f}, shrek_dominance: {shrek_dominance:.3f}")
+    #         continue
+    #     cls, ratio_tissue, ratio_shrek, shrek_dominance = analyze_image_memory(img_bgr)
+    #     if cls == "SHREK":
+    #         #print("\n", img_path.stem)
+    #         if img_path in problems:
+    #             print(f"\n{img_path.stem} --> cls: {cls}, ratio_tissue: {ratio_tissue:.3f}, ratio_shrek: {ratio_shrek:.3f}, shrek_dominance: {shrek_dominance:.3f}")
+    #         selected_images.append(img_path.stem)
+            
+    for row in labels_df.iterrows():
         fname = row['sample_index']
         img_path = config.TRAIN_DIR / fname
         img_bgr = load_image_cv2(img_path)
+        
+        problems = ["img_0173.png", "img_0202.png", "img_0352.png"]
         if contains_slime(img_bgr):
             #print("\n", img_path.stem)
             selected_images.append(img_path.stem)
-            if ((img_path == "img_0173.png") or (img_path == "img_0202.png") or (img_path == "img_0352.png")):
+            if img_path in problems:
                 print(f"\nMacchia verde {img_path.stem}")# --> cls: {cls}, ratio_tissue: {ratio_tissue:.3f}, ratio_shrek: {ratio_shrek:.3f}, shrek_dominance: {shrek_dominance:.3f}")
             continue
         cls, ratio_tissue, ratio_shrek, shrek_dominance = analyze_image_memory(img_bgr)
         if cls == "SHREK":
             #print("\n", img_path.stem)
-            if ((img_path == "img_0173.png") or (img_path == "img_0202.png") or (img_path == "img_0352.png")):
+            if img_path in problems:
                 print(f"\n{img_path.stem} --> cls: {cls}, ratio_tissue: {ratio_tissue:.3f}, ratio_shrek: {ratio_shrek:.3f}, shrek_dominance: {shrek_dominance:.3f}")
             selected_images.append(img_path.stem)
             
-    
     print("\nSelected Images: ", len(selected_images))
     for i in selected_images:
         print(i)
