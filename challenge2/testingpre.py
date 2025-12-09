@@ -220,7 +220,7 @@ def analyze_image_memory(img_bgr):
         return "SHREK", ratio_tissue, ratio_shrek, shrek_dominance
 
     # Rule: If there is a decent amount of tissue, assume safe.
-    if ratio_tissue > 0.1:
+    if ratio_tissue > 0.3:
         return "SAFE", ratio_tissue, ratio_shrek, shrek_dominance
 
     # Fallback: If Shrek ratio is moderately high.
@@ -570,10 +570,13 @@ def test_selecting_images():
             #print("\n", img_path.stem)
             selected_images.append(img_path.stem)
             continue
-        cls, _, _, _ = analyze_image_memory(img_bgr)
+        cls, ratio_tissue, ratio_shrek, shrek_dominance = analyze_image_memory(img_bgr)
         if cls == "SHREK":
             #print("\n", img_path.stem)
             selected_images.append(img_path.stem)
+        if ((img_path == "img_0173.png") or (img_path == "img_0202.png") or (img_path == "img_0352.png")):
+            print(f"\n{img_path.stem} --> cls: {cls}, ratio_tissue: {ratio_tissue:.3f}, ratio_shrek: {ratio_shrek:.3f}, shrek_dominance: {shrek_dominance:.3f}")
+            
     
     print("\nSelected Images: ", len(selected_images))
     for i in selected_images:
