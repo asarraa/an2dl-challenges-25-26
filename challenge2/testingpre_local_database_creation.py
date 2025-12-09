@@ -110,7 +110,11 @@ def load_mask_cv2(path):
     return cv2.imdecode(np.fromfile(str(path), dtype=np.uint8), cv2.IMREAD_GRAYSCALE)
 
 def process_slime_removal(img_bgr, mask_gray):
-    """Rimuove l'inchiostro verde (marker) e corregge la maschera."""
+    """
+    Rimuove l'inchiostro verde (marker) e corregge la maschera.
+    Restituisce anche un flag che indica la presenza della macchia, così
+    da poter scartare l'immagine se richiesto.
+    """
     hsv = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2HSV)
     lower_green = np.array([35, 50, 50])
     upper_green = np.array([90, 255, 255])
@@ -122,13 +126,14 @@ def process_slime_removal(img_bgr, mask_gray):
     
     kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
     mask_solid_final = cv2.dilate(mask_solid, kernel, iterations=1)
+    has_slime = np.count_nonzero(mask_solid_final) > 0
 
     # Inpainting (ricostruisce il tessuto sotto il verde)
     img_clean = cv2.inpaint(img_bgr, mask_solid_final, 3, cv2.INPAINT_TELEA)
     # Rimuove tumore dalla maschera se era coperto da inchiostro (per sicurezza)
     mask_clean = mask_gray.copy()
     mask_clean[mask_solid_final == 255] = 0
-    return img_clean, mask_clean
+    return img_clean, mask_clean, has_slime
 
 def is_patch_valid_hsv(img_crop, s_thresh, v_thresh, max_bg_ratio):
     """Controlla se c'è abbastanza tessuto (non solo vetro bianco)."""
@@ -171,11 +176,15 @@ def process_single_slide(img_path, mask_path, label, out_dirs, cfg, is_test=Fals
     mask_gray = load_mask_cv2(mask_path)
     if img_bgr is None or mask_gray is None: return None
 
-    # 1. Rimuovi Inchiostro
-    img_clean, mask_clean = process_slime_removal(img_bgr, mask_gray)
+    # 1. Rimuovi Inchiostro (se presente) e segnala eventuali macchie
+    img_clean, mask_clean, has_slime = process_slime_removal(img_bgr, mask_gray)
+    if has_slime and not is_test:
+        # Scarta completamente le immagini con macchia (sono duplicati senza macchia)
+        cv2.imwrite(str(out_dirs['discard'] / img_path.name), img_clean)
+        return "MACCHIA"
     
-    # 2. Controllo Qualità
-    if analyze_image_memory(img_clean) == "SHREK":
+    # 2. Controllo Qualità (salta su test, dove non ci sono immagini sospette)
+    if (not is_test) and analyze_image_memory(img_clean) == "SHREK":
         cv2.imwrite(str(out_dirs['discard'] / img_path.name), img_clean)
         return "SHREK"
 
