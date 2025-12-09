@@ -1,86 +1,126 @@
 import cv2
 import numpy as np
+import shutil
 import pandas as pd
 from pathlib import Path
+from tqdm import tqdm
+import config
 
-# --- 1. FUNZIONI DI UTILITY & IO ---
+# =============================================================================
+# CONFIGURATION PARAMETERS
+# =============================================================================
+
+# Size of the square patch extracted from the slide.
+# 512x512 is a good trade-off between context and resolution.
+TILE_SIZE = 224
+
+# Stride determines the overlap between patches.
+# A stride of 256 (half of TILE_SIZE) means 50% overlap.
+# This acts as Test-Time Augmentation (TTA) ensuring every cell is centered at least once.
+STRIDE = 112
+
+# HSV Thresholds for detecting "Glass" (Background).    
+# Tissue usually has higher saturation. Background is white/grey (Low Saturation, High Value).
+HSV_S_THRESH = 15   
+HSV_V_THRESH = 200  
+
+# Maximum allowed ratio of background pixels in a patch.
+# If more than 50% of the patch is background (glass), it is discarded.
+BACKGROUND_MAX_RATIO = 0.5 
+
+
+# =============================================================================
+# 1. UTILITY & I/O FUNCTIONS
+# =============================================================================
 
 def load_image_cv2(path):
-    # Usa imdecode per gestire path con caratteri speciali/OS diversi
-    img = cv2.imdecode(np.fromfile(str(path), dtype=np.uint8), cv2.IMREAD_COLOR)
-    return img
+    """
+    Loads an image from a file path using OpenCV.
+    
+    Args:
+        path (Path or str): Path to the image file.
+        
+    Returns:
+        np.array: Loaded image in BGR format, or None if loading fails.
+    """
+    # cv2.imdecode is used instead of cv2.imread to correctly handle 
+    # file paths with special characters or different OS encodings.
+    return cv2.imdecode(np.fromfile(str(path), dtype=np.uint8), cv2.IMREAD_COLOR)
 
 def load_mask_cv2(path):
-    img = cv2.imdecode(np.fromfile(str(path), dtype=np.uint8), cv2.IMREAD_GRAYSCALE)
-    return img
-
-# --- 2. LOGICA RIMOZIONE SLIME (Preprocessing) ---
-
-def process_slime_removal(img_bgr, mask_gray):
     """
-    Rimuove le macchie verdi dall'immagine (inpainting)
-    e aggiorna la maschera corrispondente (mette a 0 i pixel rimossi).
+    Loads a segmentation mask (grayscale).
+    
+    Args:
+        path (Path or str): Path to the mask file.
+        
+    Returns:
+        np.array: Loaded mask in Grayscale format.
     """
-    # Conversione per rilevamento
+    return cv2.imdecode(np.fromfile(str(path), dtype=np.uint8), cv2.IMREAD_GRAYSCALE)
+
+# =============================================================================
+# 2. PREPROCESSING LOGIC (SLIME REMOVAL & TISSUE VALIDATION)
+# =============================================================================
+def contains_slime(img_bgr, threshold=50):
+    # Convert BGR to HSV color space to easily isolate the green color.
     hsv = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2HSV)
     
-    # Range Verde (Slime)
+    # Define the lower and upper bounds for the green color (Marker Ink).
     lower_green = np.array([35, 50, 50])
     upper_green = np.array([90, 255, 255])
-    mask_slime = cv2.inRange(hsv, lower_green, upper_green)
-
-    # Pulizia maschera slime
-    contours, _ = cv2.findContours(mask_slime, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-    mask_solid = np.zeros_like(mask_slime)
-    cv2.drawContours(mask_solid, contours, -1, (255), thickness=cv2.FILLED)
-
-    kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
-    mask_solid_final = cv2.dilate(mask_solid, kernel, iterations=1)
-
-    # Inpainting sull'immagine originale
-    img_clean = cv2.inpaint(img_bgr, mask_solid_final, 3, cv2.INPAINT_TELEA)
-
-    # Aggiornamento della maschera di segmentazione (rimuove l'area dello slime)
-    mask_clean = mask_gray.copy()
-    mask_clean[mask_solid_final == 255] = 0
     
-    return img_clean, mask_clean
+    # Create a binary mask where green pixels are white (255).
+    mask_slime = cv2.inRange(hsv, lower_green, upper_green)
+    
+    # Count the number of green pixels detected
+    green_pixel_count = cv2.countNonZero(mask_slime)
+    
+    # Determine if the count exceeds the threshold
+    return green_pixel_count > threshold
 
-# --- 3. LOGICA CLASSIFICATORE V11 (Shrek Dominance) ---
+# =============================================================================
+# 3. QUALITY CONTROL (SHREK / ARTIFACT DETECTION)
+# =============================================================================
 
 def analyze_image_memory(img_bgr):
     """
-    Versione adattata di analyze_image_v11 che accetta 
-    un array numpy (immagine già in memoria) invece di un path.
+    Analyzes the image to detect if it's corrupted by excessive artifacts ("Shrek").
+    Implements the "V11" logic based on color ratios.
+    
+    Args:
+        img_bgr (np.array): The cleaned image.
+        
+    Returns:
+        tuple: (Classification string, pink_ratio, shrek_ratio, dominance_score)
     """
-    if img_bgr is None: return None
+    if img_bgr is None: return "SAFE", 0, 0, 0
     
-    # Converti in RGB per coerenza con la logica originale, poi HSV
-    img_rgb = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB)
-    hsv = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2HSV) # Nota: hsv da BGR standard
+    hsv = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2HSV) 
     
-    # --- 1. RILEVAMENTO FOREGROUND ---
-    mask_foreground = (hsv[:,:,1] > 40) & (hsv[:,:,2] < 250)
+    # 1. Identify Foreground (everything that is not white background)
+    mask_foreground = (hsv[:,:,1] > 15) & (hsv[:,:,2] < 250)
     foreground_pixels = np.count_nonzero(mask_foreground)
     
     if foreground_pixels < 100:
         return "SAFE (Empty)", 0.0, 0.0, 0.0
 
+    # Extract Hue values for foreground pixels
     h_foreground = hsv[:,:,0][mask_foreground]
 
-    # --- 2. CONTEGGIO COLORI ---
-    # A. TESSUTO (Rosa/Viola): H 125-175
+    # 2. Count pixels for specific materials based on Hue ranges:
+    # Tissue (Pink/Purple): Hue 125-175
     count_tissue = np.count_nonzero((h_foreground >= 125) & (h_foreground <= 175))
     
-    # B. INCHIOSTRO (Verde Freddo): H 80-120
+    # Green Ink (Cold Green): Hue 80-120
     count_ink = np.count_nonzero((h_foreground >= 80) & (h_foreground < 125))
     
-    # C. SHREK (Skin + Clothes)
+    # "Shrek" (Artifacts, Skin, Clothes): Low Hues 10-80
     count_shrek_skin = np.count_nonzero((h_foreground >= 20) & (h_foreground < 80))
     count_shrek_clothes = np.count_nonzero((h_foreground >= 10) & (h_foreground < 20))
     count_shrek_total = count_shrek_skin + count_shrek_clothes
     
-    # --- 3. CALCOLO RAPPORTI ---
+    # 3. Calculate Ratios relative to foreground
     ratio_tissue = count_tissue / foreground_pixels
     ratio_ink = count_ink / foreground_pixels
     ratio_shrek = count_shrek_total / foreground_pixels
@@ -90,265 +130,279 @@ def analyze_image_memory(img_bgr):
     else:
         shrek_dominance = 999.0
 
-    # --- 4. LOGICA DI CLASSIFICAZIONE V11 ---
-
-    # REGOLA 1: INK SALVATION
+    # 4. Classification Rules (V11 Logic)
+    
+    # Rule: If Ink is dominant but we saved it via cleaning, it might be safe.
     if ratio_ink > ratio_shrek and ratio_ink > 0.1:
         return "SAFE", ratio_tissue, ratio_shrek, shrek_dominance
 
-    # REGOLA 2: SHREK DOMINANCE
+    # Rule: If "Shrek" artifacts are overwhelming compared to tissue.
     if ratio_shrek > 0.4 and shrek_dominance > 4.0:
         return "SHREK", ratio_tissue, ratio_shrek, shrek_dominance
 
-    # REGOLA 3: TISSUE SAFETY
+    # Rule: If there is a decent amount of tissue, assume safe.
     if ratio_tissue > 0.05:
         return "SAFE", ratio_tissue, ratio_shrek, shrek_dominance
 
-    # REGOLA 4: SHREK FALLBACK
+    # Fallback: If Shrek ratio is moderately high.
     if ratio_shrek > 0.3:
         return "SHREK", ratio_tissue, ratio_shrek, shrek_dominance
 
     return "SAFE", ratio_tissue, ratio_shrek, shrek_dominance
 
-def add_to_array(image, mask, array):
+# =============================================================================
+# 4. TILING ENGINE
+# =============================================================================
+
+def process_single_slide(img_path, mask_path, label, output_img_dir, is_test_set=False):
     """
-    Aggiunge immagine e maschera a un array esistente.
+    Orchestrates the processing pipeline for a single whole-slide image (WSI) or ROI.
+    Pipeline: Load -> Remove Slime -> Check Quality (Shrek) -> Tile -> Save.
+    
+    Args:
+        img_path (Path): Path to source image.
+        mask_path (Path): Path to source mask.
+        label (str): Class label (e.g., "Luminal A"). None for Test Set.
+        output_img_dir (Path): Directory to save patches.
+        output_mask_dir (Path): Directory to save mask patches.
+        discard_dir (Path): Directory to save rejected images (Shrek).
+        is_test_set (bool): Flag to indicate if we are processing test data.
+        
+    Returns:
+        list: A list of dictionaries containing metadata for the generated tiles.
+              Returns "SHREK" string if the image was discarded.
     """
-    image = image[..., ::-1]
-    img4d = np.dstack((image, mask))
-    array.append((img4d))
-    return
-
-def preprocess():
-    exit_path = Path("../..")
-    input_dir = exit_path / "drive/MyDrive/AN2DL_Challenge2-TheBigBatchTheory/data/dataset/train_data"
-    output_dir = exit_path / "drive/MyDrive/AN2DL_Challenge2-TheBigBatchTheory/data/processed"
-    labels_dir = exit_path / "drive/MyDrive/AN2DL_Challenge2-TheBigBatchTheory/data/dataset/train_labels.csv"
-    labels = pd.read_csv(labels_dir)    
+    img_bgr = load_image_cv2(img_path)
+    mask = load_mask_cv2(mask_path)
     
-    # Creazione struttura cartelle output
-    final_img_dir = output_dir / "images"
-    final_mask_dir = output_dir / "masks"
-    discard_dir = output_dir / "discarded_shrek"
+    # Basic error check
+    if img_bgr is None or mask is None: 
+        return None
 
-    final_img_dir.mkdir(parents=True, exist_ok=True)
-    final_mask_dir.mkdir(parents=True, exist_ok=True)
-    discard_dir.mkdir(parents=True, exist_ok=True)
+    if not is_test_set:
+        # --- Step 1: Slime Removal ---
+        if contains_slime(img_bgr):
+            return
 
-    # Trova tutte le immagini
-    extensions = ["*.png", "*.jpg", "*.jpeg"]
-    img_files = []
-    for ext in extensions:
-        img_files.extend(list(input_dir.glob(f"**/{ext}")))
+        # --- Step 2: Quality Control (Shrek Check) ---
+        cls, _, _, _ = analyze_image_memory(img_bgr)
+        
+        # If classified as "SHREK" (corrupted/artifact), we discard the whole slide.
+        if cls == "SHREK":
+            return
 
-    # Filtra solo quelli che matchano il pattern img_XXXX
-    img_files = [f for f in img_files if f.name.startswith("img_") and "mask" not in f.name]
-
-    print(f"Trovate {len(img_files)} immagini da processare.")
-    print("-" * 50)
-
-    stats = {"SAFE": 0, "SHREK": 0, "ERROR": 0}
-    report_rows = []
-    img_array = []
+    # --- Step 3: Tiling (Patch Extraction) ---
+    tiles_data = []
+    h, w, _ = img.shape
+    base_name = img_path.stem # e.g., "img_001"
     
-    for i, img_path in enumerate(img_files):
-        try:
-            # 1. Identifica Mask path
-            # Assume formato: img_1234.png -> mask_1234.png
-            file_stem = img_path.stem # img_1234
-            suffix = img_path.suffix  # .png
-            # Estrae il numero (o la parte dopo img_)
-            id_part = file_stem.replace("img_", "")
-            mask_name = f"mask_{id_part}{suffix}"
-            mask_path = img_path.parent / mask_name
+    # Multi-channel Masking:
+    img = img_bgr * mask[:,:,np.newaxis]
 
-            if not mask_path.exists():
-                # Prova fallback estensione png se originale era jpg
-                mask_path = img_path.parent / f"mask_{id_part}.png"
-                if not mask_path.exists():
-                    print(f"⚠️ Mask non trovata per {img_path.name}, salto.")
-                    stats["ERROR"] += 1
-                    continue
+    # Iterate over the image with the defined stride
+    for y in range(0, h, STRIDE):
+        for x in range(0, w, STRIDE):
+            y_end = min(y + TILE_SIZE, h)
+            x_end = min(x + TILE_SIZE, w)
+            
+            # Skip strips at the edges that are too small (less than half a tile)
+            if (y_end - y) < TILE_SIZE // 2 or (x_end - x) < TILE_SIZE // 2: continue
 
-            # 2. Carica Immagine e Maschera
-            img_bgr = load_image_cv2(img_path)
-            mask_gray = load_mask_cv2(mask_path)
+            # Extract the crop
+            img_crop = img[y:y_end, x:x_end]
+            #mask_crop = mask[y:y_end, x:x_end]
 
-            if img_bgr is None or mask_gray is None:
-                print(f"Errore caricamento file per {img_path.name}")
-                stats["ERROR"] += 1
+            if np.sum(img_crop) == 0:
                 continue
-
-            # 3. RIMOZIONE SLIME
-            img_clean, mask_clean = process_slime_removal(img_bgr, mask_gray)
             
-            # 4. CLASSIFICAZIONE V11 (Sull'immagine pulita!)
-            cls, r_tiss, r_shrek, dom = analyze_image_memory(img_clean)
-
-            # Logging
-            report_rows.append({
-                "filename": img_path.name,
-                "classification": cls,
-                "pink_ratio": r_tiss,
-                "shrek_ratio": r_shrek,
-                "dominance": dom
-            })
-
-            # 5. SALVATAGGIO
-            if cls == "SHREK":
-                # Sposta/Salva nei scarti
-                cv2.imwrite(str(discard_dir / img_path.name), img_clean)
-                cv2.imwrite(str(discard_dir / mask_name), mask_clean)
-                stats["SHREK"] += 1
-                #i want to remove the corresponding row from labels dataframe
-                labels.drop(labels[labels['sample_index'] == img_path.name].index, inplace=True)
-                #print(f"❌ {img_path.name} -> SHREK (Scartato)")
-            else:
-                # SAFE -> Salva nelle cartelle finali divise
-                cv2.imwrite(str(final_img_dir / img_path.name), img_clean)
-                cv2.imwrite(str(final_mask_dir / mask_name), mask_clean)
-                stats["SAFE"] += 1
-                print(f"✅ {img_path.name} -> SAFE") # Decommenta per log verbose
-                add_to_array(img_clean, mask_clean, img_array)
-
-        except Exception as e:
-            print(f"Errore critico su {img_path.name}: {e}")
-            stats["ERROR"] += 1
-        
-        # Avanzamento
-        if i % 20 == 0:
-            print(f"Processati {i}/{len(img_files)}...", end="\r")
-
-    # Salva labels in un file csv in /processed
-    labels.to_csv(output_dir / "train_labels_processed.csv", index=False)
-    np.save(output_dir / "processed_images.npy", np.array(img_array))
-    
-    print("\n" + "="*50)
-    print("ELABORAZIONE COMPLETATA")
-    print(f"📁 Output: {output_dir}")
-    print(f"✅ Immagini SAFE (Salvate): {stats['SAFE']}")
-    print(f"❌ Immagini SHREK (Scartate): {stats['SHREK']}")
-    print(f"⚠️ Errori (No Mask/Corrotte): {stats['ERROR']}")
-    print("="*50)
-    return
-
-# --- 4. MAIN PIPELINE ---
-
-# def main():
-    
-    
-#     input_dir = Path("./data/train_data")
-#     output_dir = Path("./data/processed")
-#     labels_dir = Path("./data/train_labels.csv")
-
-#     labels = pd.read_csv(labels_dir)
-    
-    
-#     # Creazione struttura cartelle output
-#     final_img_dir = output_dir / "images"
-#     final_mask_dir = output_dir / "masks"
-#     discard_dir = output_dir / "discarded_shrek"
-
-#     final_img_dir.mkdir(parents=True, exist_ok=True)
-#     final_mask_dir.mkdir(parents=True, exist_ok=True)
-#     discard_dir.mkdir(parents=True, exist_ok=True)
-
-#     # Trova tutte le immagini
-#     extensions = ["*.png", "*.jpg", "*.jpeg"]
-#     img_files = []
-#     for ext in extensions:
-#         img_files.extend(list(input_dir.glob(f"**/{ext}")))
-
-#     # Filtra solo quelli che matchano il pattern img_XXXX
-#     img_files = [f for f in img_files if f.name.startswith("img_") and "mask" not in f.name]
-
-#     print(f"Trovate {len(img_files)} immagini da processare.")
-#     print("-" * 50)
-
-#     stats = {"SAFE": 0, "SHREK": 0, "ERROR": 0}
-#     report_rows = []
-#     img_array = []
-    
-#     for i, img_path in enumerate(img_files):
-#         try:
-#             # 1. Identifica Mask path
-#             # Assume formato: img_1234.png -> mask_1234.png
-#             file_stem = img_path.stem # img_1234
-#             suffix = img_path.suffix  # .png
-#             # Estrae il numero (o la parte dopo img_)
-#             id_part = file_stem.replace("img_", "")
-#             mask_name = f"mask_{id_part}{suffix}"
-#             mask_path = img_path.parent / mask_name
-
-#             if not mask_path.exists():
-#                 # Prova fallback estensione png se originale era jpg
-#                 mask_path = img_path.parent / f"mask_{id_part}.png"
-#                 if not mask_path.exists():
-#                     print(f"⚠️ Mask non trovata per {img_path.name}, salto.")
-#                     stats["ERROR"] += 1
-#                     continue
-
-#             # 2. Carica Immagine e Maschera
-#             img_bgr = load_image_cv2(img_path)
-#             mask_gray = load_mask_cv2(mask_path)
-
-#             if img_bgr is None or mask_gray is None:
-#                 print(f"Errore caricamento file per {img_path.name}")
-#                 stats["ERROR"] += 1
-#                 continue
-
-#             # 3. RIMOZIONE SLIME
-#             img_clean, mask_clean = process_slime_removal(img_bgr, mask_gray)
+            # --- Padding Logic ---
+            # If the crop is smaller than TILE_SIZE (at the edges), we need to pad.
+            pad_h = TILE_SIZE - img_crop.shape[0]
+            pad_w = TILE_SIZE - img_crop.shape[1]
             
-#             # 4. CLASSIFICAZIONE V11 (Sull'immagine pulita!)
-#             cls, r_tiss, r_shrek, dom = analyze_image_memory(img_clean)
+            if pad_h > 0 or pad_w > 0:
+                # REFLECTION PADDING for Image:
+                # Mirrors the edge pixels. This maintains texture continuity and prevents
+                # "hard edge" artifacts that zero-padding creates (CNNs hate hard edges).
+                img_crop = cv2.copyMakeBorder(img_crop, 0, pad_h, 0, pad_w, cv2.BORDER_REFLECT_101)
+                
+            tile_name = f"{base_name}_y{y}_x{x}.png"
+                
+            # Save to disk
+            cv2.imwrite(str(output_img_dir / tile_name), img_crop)
 
-#             # Logging
-#             report_rows.append({
-#                 "filename": img_path.name,
-#                 "classification": cls,
-#                 "pink_ratio": r_tiss,
-#                 "shrek_ratio": r_shrek,
-#                 "dominance": dom
-#             })
+            # Prepare metadata for CSV
+            row = {
+                'sample_index': tile_name,      # name of the tile: image_name_x_y coorindates
+                'original_sample': img_path.name, # Name of the full image
+            }
+            
+            # Add label only if we are in Training mode
+            if not is_test_set:
+                row['label'] = label
+            
+            tiles_data.append(row)
+            
+    if len(tiles_data) == 0:
+        print(f"No valid tiles extracted from {img_path.name} after processing.")
+    return tiles_data
 
-#             # 5. SALVATAGGIO
-#             if cls == "SHREK":
-#                 # Sposta/Salva nei scarti
-#                 cv2.imwrite(str(discard_dir / img_path.name), img_clean)
-#                 cv2.imwrite(str(discard_dir / mask_name), mask_clean)
-#                 stats["SHREK"] += 1
-#                 #i want to remove the corresponding row from labels dataframe
-#                 labels.drop(labels[labels['sample_index'] == img_path.name].index, inplace=True)
-#                 print(f"❌ {img_path.name} -> SHREK (Scartato)")
-#             else:
-#                 # SAFE -> Salva nelle cartelle finali divise
-#                 cv2.imwrite(str(final_img_dir / img_path.name), img_clean)
-#                 cv2.imwrite(str(final_mask_dir / mask_name), mask_clean)
-#                 stats["SAFE"] += 1
-#                 # print(f"✅ {img_path.name} -> SAFE") # Decommenta per log verbose
-#                 add_to_array(img_clean, mask_clean, img_array)
+# =============================================================================
+# 5. MAIN EXECUTION
+# =============================================================================
 
-#         except Exception as e:
-#             print(f"Errore critico su {img_path.name}: {e}")
-#             stats["ERROR"] += 1
+def preprocess(do_test=True, preprocess_name=None):
+    '''
+    do_test: if applying also to
+    '''
+    if preprocess_name == None:
+        print("[ERROR] Give a name to this preprocessing")
+        return
+
+    # Output Directories
+    single_preprocessing_dir = config.BASE_PREPROCESSED / preprocess_name
+    
+    # Create specific subdirectories for organized output
+    out_train_img = single_preprocessing_dir / "train/images"
+    out_test_img = single_preprocessing_dir / "test/images"
+    '''
+    data --> BASE_DATA
+    -dataset --> base_dataset
+        --train_data
+        --test_data
+        --train_labels.csv
         
-#         # Avanzamento
-#         if i % 20 == 0:
-#             print(f"Processati {i}/{len(img_files)}...", end="\r")
+    -preprocessed --> base_preprocessed 
+        --<Preprocess_name> --> single_preprocessing_dir
+            ---train
+                ---images
+                ---.csv
+            ---test
+                ---images
+                ---.csv
+    '''
+    # Clean up previous runs and create directories
+    if out_train_img.exists(): 
+        shutil.rmtree(out_train_img)
+        print(f"[DEBUG] testing_pre: Cleaning output directory {out_train_img}!!!!!")
+    out_train_img.mkdir(parents=True, exist_ok=True)
 
-    
-#     # Salva labels in un file csv in /processed
-#     labels.to_csv(output_dir / "train_labels_processed.csv", index=False)
-#     np.save(output_dir / "processed_images.npy", np.array(img_array))
-    
-#     print("\n" + "="*50)
-#     print("ELABORAZIONE COMPLETATA")
-#     print(f"📁 Output: {output_dir}")
-#     print(f"✅ Immagini SAFE (Salvate): {stats['SAFE']}")
-#     print(f"❌ Immagini SHREK (Scartate): {stats['SHREK']}")
-#     print(f"⚠️ Errori (No Mask/Corrotte): {stats['ERROR']}")
-#     print("="*50)
+    if do_test:
+        if out_test_img.exists(): 
+            shutil.rmtree(out_test_img)
+            print(f"[DEBUG] testing_pre: Cleaning output directory {out_test_img}!!!!!")
+        out_test_img.mkdir(parents=True, exist_ok=True)
 
-# if __name__ == "__main__":
-#     main()
+    # -------------------------------------------------------------------------
+    # FASE 1: TRAINING SET PROCESSING
+    # -------------------------------------------------------------------------
+    print(">>> FASE 1: Processing TRAINING SET (Labels + Weights)")
+    labels_csv = config.LABELS_CSV
+    train_dir = config.TRAIN_DIR
+    if labels_csv.exists() and train_dir.exists():
+        labels_df = pd.read_csv(labels_csv)
+        
+        # SORTING: Sort the dataframe by sample_index to ensure processing order is ascending.
+        # This guarantees that img_001 is processed before img_002.
+        labels_df = labels_df.sort_values(by='sample_index')
+        
+        train_rows = []
+        
+        # Iterate through the sorted labels
+        for _, row in tqdm(labels_df.iterrows(), total=len(labels_df), desc="Training Slides"):
+            fname = row['sample_index']
+            label = row['label']
+            
+            # Locate the image file (recursive search allows subfolders)
+            img_path = train_dir / fname
+            if not img_path.exists(): 
+                 found = list(train_dir.glob(f"**/{fname}")) 
+                 if found: img_path = found[0]
+                 else: continue
+            
+            # Locate the corresponding mask
+            # Assumes naming convention: img_X -> mask_X
+            mask_name = fname.replace("img_", "mask_") 
+            mask_path = img_path.parent / mask_name
+            
+            # Fallback if mask is .png but image is .jpg
+            if not mask_path.exists(): 
+                 mask_path = img_path.parent / fname.replace("img_", "mask_").replace(".jpg", ".png")
+                 if not mask_path.exists(): continue
+
+            # Process the slide
+            res = process_single_slide(img_path, mask_path, label, out_train_img, is_test_set=False,)
+            
+            # If successful (list returned), add rows to the dataset
+            if isinstance(res, list): 
+                train_rows.extend(res)
+
+        # Save the final CSV for training
+        if train_rows:
+            train_df = pd.DataFrame(train_rows)
+            # Reorder columns for clarity
+            cols = ['sample_index', 'original_sample', 'label']
+            train_df = train_df[cols]
+            train_df.to_csv(single_preprocessing_dir / "train_patches.csv", index=False)
+            print(f"✅ Training Tiles Saved: {len(train_rows)}")
+        else:
+            print("⚠️ No tiles generated for Training Set.")
+    else:
+        print("⚠️ train_data folder or train_labels.csv not found.")
+        
+    if do_test and config.TEST_DIR.exists():
+        process_test(preprocess_name)
+
+ #-------------------------------------------------------------------------
+ #FASE 2: TEST SET PROCESSING
+ #-------------------------------------------------------------------------
+
+def process_test(preprocess_name=None):
+
+    if preprocess_name == None :
+        print("[ERROR] Give a name to this preprocessing")
+        return
+
+    #subfolder of preprocessed
+    single_preprocessing_dir = config.BASE_PREPROCESSED / preprocess_name
+
+    #output directories
+    out_test_img = single_preprocessing_dir / "test/images"
+
+    print("\n>>> FASE 2: Processing TEST SET (Weights Only - No Labels)")
+    test_dir = config.TEST_DIR
+    if test_dir.exists():
+        test_rows = []
+    
+        # Find all images.
+        # SORTING: We gather all files first, then sort them to ensure ascending order.
+        all_files = sorted(list(test_dir.glob("**/img_*.*")))
+    
+        for img_path in tqdm(all_files, desc="Test Slides"):
+            # Skip if glob accidentally picked up a mask file 
+            if "mask" in img_path.name: continue #(img_path.name elimina ".png")
+        
+            # Find corresponding mask
+            id_part = img_path.stem.replace("img_", "")
+            mask_path = img_path.parent / f"mask_{id_part}{img_path.suffix}"
+            if not mask_path.exists():
+                mask_path = img_path.parent / f"mask_{id_part}.png"
+        
+            if not mask_path.exists(): continue #if mask not found, skip image
+            # Process the slide (Test Mode: label=None, is_test_set=True)
+            res = process_single_slide(img_path, mask_path, None, out_test_img, is_test_set=True)
+        
+            if isinstance(res, list): 
+                test_rows.extend(res)
+        # Save the final CSV for testing
+        if test_rows:
+            test_df = pd.DataFrame(test_rows)
+            # Reorder columns (No Label column here)
+            cols = ['sample_index', 'original_sample']
+            test_df = test_df[cols]
+            test_df.to_csv(single_preprocessing_dir / "test_patches.csv", index=False)
+            print(f"✅ Test Tiles Saved: {len(test_rows)}")
+        else:
+            print("⚠️ No tiles generated for Test Set.")
+    else:
+        print("⚠️ test_data folder not found.")
