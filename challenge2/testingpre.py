@@ -585,7 +585,7 @@ def test_selecting_images():
         fname = row['sample_index']
         img_path = config.TRAIN_DIR / fname
         img_bgr = load_image_cv2(img_path)
-        
+        print(f"Processing {img_path.stem}")
         problems = ["img_0173.png", "img_0202.png", "img_0352.png"]
         if contains_slime(img_bgr):
             #print("\n", img_path.stem)
