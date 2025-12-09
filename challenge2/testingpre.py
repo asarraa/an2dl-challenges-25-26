@@ -506,13 +506,15 @@ def test_selecting_images():
         img_path = train_dir / fname
         img_bgr = load_image_cv2(img_path)
         if contains_slime(img_bgr):
-            print("\n", img_path.stem)
-            #selected_images.append(img_path.stem)
+            #print("\n", img_path.stem)
+            selected_images.append(img_path.stem)
             continue
         cls, _, _, _ = analyze_image_memory(img_bgr)
         if cls == "SHREK":
-            print("\n", img_path.stem)
-            #selected_images.append(img_path.stem)
+            #print("\n", img_path.stem)
+            selected_images.append(img_path.stem)
     
-    #print("\nSelected Images:", selected_images)
+    print("\nSelected Images:")
+    for i in selected_images:
+        print(i)
     return
