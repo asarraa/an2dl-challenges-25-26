@@ -207,3 +207,74 @@ def get_loaders(augmentation=None, batch_size=LOADER_PARAMS["batch_size"], base_
     
     # Return both dataloaders and input image shape
     return train_loader, val_loader, input_shape
+
+
+def get_test_loaders():
+    # Base dataset path; fallback to default if none provided
+    base_path = Path(base_path) if base_path else Path("../../drive/MyDrive/AN2DL_Challenge2-TheBigBatchTheory/data/dataset/testpreprocessing")
+    # Subdirectories containing training images and (optionally) masks
+    images_dir = base_path / "train" / "images"
+    masks_dir = base_path / "train" / "masks" if add_mask_channel else None
+    # Path to CSV that maps image filenames to labels
+    csv_path = base_path / "train_patches.csv"
+    
+    # Read CSV metadata into memory (very small footprint)
+    df = pd.read_csv(csv_path)
+    
+    # Create mapping: string labels → integer labels
+    label_map = {label: idx for idx, label in enumerate(df['label'].unique())}
+    # Replace labels in dataframe with integer mapping
+    df['label'] = df['label'].map(label_map)
+    
+    # Split dataset into train and validation sets (stratified by label distribution)
+    train_df, val_df = train_test_split(
+        df,
+        test_size=LOADER_PARAMS["percentage_validation"],  # percentage for validation in config
+        random_state=SEED,                                  # reproducible split
+        stratify=df['label']                                # maintain class balance
+    )
+    
+    # Load one sample image for determining input shape
+    sample_path = images_dir / df.iloc[0]['sample_index']
+    sample_img = cv2.imread(str(sample_path))
+    if sample_img is None:
+        raise FileNotFoundError(f"Could not load sample image {sample_path}")
+    
+    # Determine shape depending on whether masks are appended
+    if add_mask_channel:
+        sample_mask = cv2.imread(str(masks_dir / df.iloc[0]['sample_index']), cv2.IMREAD_GRAYSCALE)
+        if sample_mask is None:
+            raise FileNotFoundError(f"Could not load sample mask {masks_dir / df.iloc[0]['sample_index']}")
+        # Input shape becomes 4 channels (RGB + Mask)
+        input_shape = (4, sample_img.shape[0], sample_img.shape[1])  # (C, H, W)
+    else:
+        # Standard shape: channels, height, width
+        input_shape = (sample_img.shape[2], sample_img.shape[0], sample_img.shape[1])  # (C, H, W)
+    
+    # Define default training augmentations if none passed by user
+    if augmentation is None:
+        train_augmentation = transforms.Compose([
+            transforms.RandomHorizontalFlip(p=0.5),                                   # 50% chance of horizontal flip
+            transforms.RandomVerticalFlip(p=0.5),                                     # 50% chance of vertical flip
+            transforms.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2),     # Random color perturbations
+            transforms.RandomAffine(degrees=15, translate=(0.1, 0.1), scale=(0.9, 1.1)) # Random rotations/scaling
+        ])
+    else:
+        # Use custom augmentations if provided
+        train_augmentation = augmentation
+    
+    # Create training dataset with augmentations
+    train_ds = LazyImageDataset(train_df, images_dir, masks_dir=masks_dir, add_mask_channel=add_mask_channel, transform=train_augmentation)
+    # Validation dataset without augmentations
+    val_ds = LazyImageDataset(val_df, images_dir, masks_dir=masks_dir, add_mask_channel=add_mask_channel, transform=None)
+    
+    # Create DataLoaders for training and validation
+    train_loader = make_loader(train_ds, batch_size=batch_size, shuffle=True, drop_last=False)
+    val_loader = make_loader(val_ds, batch_size=batch_size, shuffle=False, drop_last=False)
+    
+    # Print dataset statistics
+    print(f"✅ Train samples: {len(train_ds)}, Val samples: {len(val_ds)}")
+    print(f"✅ Input shape: {input_shape}")
+    
+    # Return both dataloaders and input image shape
+    return train_loader, val_loader, input_shape

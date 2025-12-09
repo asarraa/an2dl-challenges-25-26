@@ -199,7 +199,7 @@ def make_inference(best_model, test_loader, device_obj):
     # Set display_all_conv_layers=True to show all conv layers, False for only last conv of each block
     #visualize(best_model, X_test, y_test, unique_labels, display_activations=True, display_all_conv_layers=False, device_obj)
 
-    df_test = pd.read_csv('test_patches.csv')
+    df_test = pd.read_csv('test_patches.csv') #this csv has the following columns ['sample_index', 'original_sample', 'tumor_coverage']
 
 
     # Collect predictions and ground truth labels

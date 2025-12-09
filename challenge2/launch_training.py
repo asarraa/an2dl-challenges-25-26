@@ -181,6 +181,9 @@ def start_training(model_name="CNN", model_params=None, training_params=None, de
       "model": model_name,
     }
 
+    comet_experiment.log_parameters(hyper_params)
+
+
     data_input_shape =  data_input_shape #TODO: take it from preprocessing: preprocessing.get_data_input_shape()
 
 
@@ -249,9 +252,6 @@ def start_training(model_name="CNN", model_params=None, training_params=None, de
     if training_history['val_f1'][-1] > best_performance:
         best_model = model
         best_performance = training_history['val_f1'][-1]
-
-    comet_experiment.log_parameters(hyper_params)
-
 
     # -------------------------------------------------------
     # 5. SAVE TO REGISTRY 

@@ -19,7 +19,7 @@ TILE_SIZE = 512
 # This acts as Test-Time Augmentation (TTA) ensuring every cell is centered at least once.
 STRIDE = 256
 
-# HSV Thresholds for detecting "Glass" (Background).
+# HSV Thresholds for detecting "Glass" (Background).    
 # Tissue usually has higher saturation. Background is white/grey (Low Saturation, High Value).
 HSV_S_THRESH = 15   
 HSV_V_THRESH = 200  
@@ -27,6 +27,10 @@ HSV_V_THRESH = 200
 # Maximum allowed ratio of background pixels in a patch.
 # If more than 50% of the patch is background (glass), it is discarded.
 BACKGROUND_MAX_RATIO = 0.5 
+
+
+BASE_DATA = Path("../../drive/MyDrive/AN2DL_Challenge2-TheBigBatchTheory/data")
+
 
 
 # =============================================================================
@@ -215,7 +219,7 @@ def analyze_image_memory(img_bgr):
         return "SHREK", ratio_tissue, ratio_shrek, shrek_dominance
 
     # Rule: If there is a decent amount of tissue, assume safe.
-    if ratio_tissue > 0.05:
+    if ratio_tissue > 0.1:
         return "SAFE", ratio_tissue, ratio_shrek, shrek_dominance
 
     # Fallback: If Shrek ratio is moderately high.
@@ -315,12 +319,12 @@ def process_single_slide(img_path, mask_path, label, output_img_dir, output_mask
                 # Save to disk
                 cv2.imwrite(str(output_img_dir / tile_name), img_crop)
                 cv2.imwrite(str(output_mask_dir / tile_name), mask_crop)
-                add_to_array(img_crop, mask_crop, img_array)
+                add_to_array(img_crop, mask_crop, img_array) #add both image and mask to 4channel image (array numpy)
 
                 # Prepare metadata for CSV
                 row = {
-                    'sample_index': tile_name,      # Filename of the patch
-                    'original_sample': img_path.name, # Filename of the WSI (for grouping)
+                    'sample_index': tile_name,      # name of the tile: image_name_x_y coorindates
+                    'original_sample': img_path.name, # Name of the full image
                     'tumor_coverage': tumor_coverage  # Weight for inference
                 }
                 
@@ -355,36 +359,85 @@ def add_to_array(image, mask, array):
 # 5. MAIN EXECUTION
 # =============================================================================
 
-def main():
+def main(do_test=True, preprocess_name=None):
+    '''
+    do_test: if applying also to
+    '''
+
     #base_data = Path("./")
     
     # Input Directories
     # train_dir = base_data / "train_data"
     # #test_dir = base_data / "test_data"
     # labels_csv = base_data / "train_labels.csv"
-    base_data = Path("../../drive/MyDrive/AN2DL_Challenge2-TheBigBatchTheory/data/dataset")
-    train_dir = base_data / "train_data"
-    labels_csv = base_data / "train_labels.csv"
+    base_dataset = BASE_DATA / "dataset"
+    base_preprocessed = BASE_DATA / "preprocessed"
+    
+    train_dir = base_dataset / "train_data"
+    labels_csv = base_dataset / "train_labels.csv"
+    test_dir = base_dataset / "test_data"
 
 
+    if preprocess_name == None:
+        print("[ERROR] Give a name to this preprocessing")
+        return
 
     # Output Directories
-    processed_dir = base_data / "testpreprocessing"
+    single_preprocessing_dir = base_preprocessed / preprocess_name
     
     # Create specific subdirectories for organized output
-    out_train_img = processed_dir / "train/images"
-    out_train_mask = processed_dir / "train/masks"
-    out_test_img = processed_dir / "test/images"
-    out_test_mask = processed_dir / "test/masks"
-    discard_dir = processed_dir / "discarded_shrek"
-    arrays_dir = processed_dir / "arrays"
+    #Train
+    out_train_img = single_preprocessing_dir / "train/images"
+    out_train_mask = single_preprocessing_dir / "train/masks"
+    train_arrays_dir = single_preprocessing_dir / "train/arrays"
+    
+    #Test
+    out_test_img = single_preprocessing_dir / "test/images"
+    out_test_mask = single_preprocessing_dir / "test/masks"
+    test_arrays_dir = single_preprocessing_dir / "test/arrays"
+
+    # Discarded
+    discard_dir = single_preprocessing_dir / "discarded"
+    '''
+    data --> BASE_DATA
+    -dataset --> base_dataset
+        --train_data
+        --test_data
+        --train_labels.csv
+        
+    -preprocessed --> base_preprocessed 
+        --<Preprocess_name> --> single_preprocessing_dir
+            ---train
+                ---images
+                ---mask
+                ---arrays
+                ---.csv
+            ---test
+                ---images
+                ---mask
+                ---arrays
+                ---.csv
+            ---discared
+                ---images
+                ---mask
+    '''
+
 
     # Clean up previous runs and create directories
-    for d in [out_train_img, out_train_mask, out_test_img, out_test_mask, discard_dir, arrays_dir]:
+    for d in [out_train_img, out_train_mask, discard_dir, train_arrays_dir]:
         if d.exists(): 
             shutil.rmtree(d)
             print(f"[DEBUG] testing_pre: Cleaning output directory {d}!!!!!")
         d.mkdir(parents=True, exist_ok=True)
+
+    if do_test:
+        for d in [out_test_img, out_test_mask, test_arrays_dir]:
+            if d.exists(): 
+                shutil.rmtree(d)
+                print(f"[DEBUG] testing_pre: Cleaning output directory {d}!!!!!")
+            d.mkdir(parents=True, exist_ok=True)
+
+    
 
     # -------------------------------------------------------------------------
     # FASE 1: TRAINING SET PROCESSING
@@ -425,7 +478,7 @@ def main():
             # Process the slide
             res = process_single_slide(
                 img_path, mask_path, label, 
-                out_train_img, out_train_mask, discard_dir, arrays_dir,
+                out_train_img, out_train_mask, discard_dir, train_arrays_dir,
                 is_test_set=False,
             )
             
@@ -440,18 +493,49 @@ def main():
             # Reorder columns for clarity
             cols = ['sample_index', 'original_sample', 'label', 'tumor_coverage']
             train_df = train_df[cols]
-            train_df.to_csv(processed_dir / "train_patches.csv", index=False)
+            train_df.to_csv(single_preprocessing_dir / "train_patches.csv", index=False)
             print(f"✅ Training Tiles Saved: {len(train_rows)}")
         else:
             print("⚠️ No tiles generated for Training Set.")
     else:
         print("⚠️ train_data folder or train_labels.csv not found.")
+        
+    if do_test and test_dir.exists():
+        
+        process_test(preprocess_name)
 
 
  #-------------------------------------------------------------------------
  #FASE 2: TEST SET PROCESSING
  #-------------------------------------------------------------------------
-def process_test(test_dir, out_test_img, out_test_mask, discard_dir, processed_dir):
+def process_test(preprocess_name=None):
+
+    if preprocess_name == None :
+        print("[ERROR] Give a name to this preprocessing")
+        return
+
+
+    # Base Directories
+    base_dataset = BASE_DATA / "dataset"
+    base_preprocessed = BASE_DATA / "preprocessed"
+
+    #where test data are
+    test_dir = base_dataset / "test_data"
+
+    #subfolder of preprocessed
+    single_preprocessing_dir = base_preprocessed / preprocess_name
+
+    #output directories
+    out_test_img = single_preprocessing_dir / "test/images"
+    out_test_mask = single_preprocessing_dir / "test/masks"
+    test_arrays_dir = single_preprocessing_dir / "test/arrays"
+
+    # Discarded
+    discard_dir = single_preprocessing_dir / "discarded"
+
+    
+    
+    
     print("\n>>> FASE 2: Processing TEST SET (Weights Only - No Labels)")
     if test_dir.exists():
         test_rows = []
@@ -461,8 +545,8 @@ def process_test(test_dir, out_test_img, out_test_mask, discard_dir, processed_d
         all_files = sorted(list(test_dir.glob("**/img_*.*")))
     
         for img_path in tqdm(all_files, desc="Test Slides"):
-            # Skip if glob accidentally picked up a mask file
-            if "mask" in img_path.name: continue 
+            # Skip if glob accidentally picked up a mask file 
+            if "mask" in img_path.name: continue #(img_path.name elimina ".png")
         
             # Find corresponding mask
             id_part = img_path.stem.replace("img_", "")
@@ -470,11 +554,11 @@ def process_test(test_dir, out_test_img, out_test_mask, discard_dir, processed_d
             if not mask_path.exists():
                 mask_path = img_path.parent / f"mask_{id_part}.png"
         
-            if not mask_path.exists(): continue
+            if not mask_path.exists(): continue #if mask not found, skip image
             # Process the slide (Test Mode: label=None, is_test_set=True)
-            res = process_single_slide(
+            res = process_single_slide( #call process single slide with mask and corresponding mask
                 img_path, mask_path, None, 
-                out_test_img, out_test_mask, discard_dir, 
+                out_test_img, out_test_mask, discard_dir, test_arrays_dir #directories
                 is_test_set=True
             )
         
@@ -486,7 +570,7 @@ def process_test(test_dir, out_test_img, out_test_mask, discard_dir, processed_d
             # Reorder columns (No Label column here)
             cols = ['sample_index', 'original_sample', 'tumor_coverage']
             test_df = test_df[cols]
-            test_df.to_csv(processed_dir / "test_patches.csv", index=False)
+            test_df.to_csv(single_preprocessing_dir / "test_patches.csv", index=False)
             print(f"✅ Test Tiles Saved: {len(test_rows)}")
         else:
             print("⚠️ No tiles generated for Test Set.")
@@ -495,9 +579,9 @@ def process_test(test_dir, out_test_img, out_test_mask, discard_dir, processed_d
         
 
 def test_selecting_images():
-    base_data = Path("../../drive/MyDrive/AN2DL_Challenge2-TheBigBatchTheory/data/dataset")
-    train_dir = base_data / "train_data"
-    labels_csv = base_data / "train_labels.csv"
+    base_dataset = Path("../../drive/MyDrive/AN2DL_Challenge2-TheBigBatchTheory/data/dataset")
+    train_dir = base_dataset / "train_data"
+    labels_csv = base_dataset / "train_labels.csv"
     labels_df = pd.read_csv(labels_csv)
     labels_df = labels_df.sort_values(by='sample_index')
     selected_images = []
@@ -518,3 +602,25 @@ def test_selecting_images():
     for i in selected_images:
         print(i)
     return
+
+
+def prepare_test():
+    base_dataset = Path("../../drive/MyDrive/AN2DL_Challenge2-TheBigBatchTheory/data/dataset")
+
+    # Output Directories
+    single_preprocessing_dir = base_dataset / "testpreprocessing"
+    
+    # Create specific subdirectories for organized output
+    out_test_img = single_preprocessing_dir / "test/images"
+    out_test_mask = single_preprocessing_dir / "test/masks"
+    discard_dir = single_preprocessing_dir / "discarded_shrek"
+    test_arrays_dir = single_preprocessing_dir / "test_arrays"
+
+    # Clean up previous runs and create directories
+    for d in [out_test_img, out_test_mask, discard_dir, test_arrays_dir]:
+        if d.exists(): 
+            shutil.rmtree(d)
+            print(f"[DEBUG] testing_pre: Cleaning output directory {d}!!!!!")
+        d.mkdir(parents=True, exist_ok=True)
+        
+    process_test(base_dataset / "test_data", out_test_img, out_test_mask, test_arrays_dir, discard_dir, single_preprocessing_dir)
