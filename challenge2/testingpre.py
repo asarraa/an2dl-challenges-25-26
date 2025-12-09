@@ -62,7 +62,23 @@ def load_mask_cv2(path):
 # =============================================================================
 # 2. PREPROCESSING LOGIC (SLIME REMOVAL & TISSUE VALIDATION)
 # =============================================================================
-
+def contains_slime(img_bgr, threshold=50):
+    # Convert BGR to HSV color space to easily isolate the green color.
+    hsv = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2HSV)
+    
+    # Define the lower and upper bounds for the green color (Marker Ink).
+    lower_green = np.array([35, 50, 50])
+    upper_green = np.array([90, 255, 255])
+    
+    # Create a binary mask where green pixels are white (255).
+    mask_slime = cv2.inRange(hsv, lower_green, upper_green)
+    
+    # Count the number of green pixels detected
+    green_pixel_count = cv2.countNonZero(mask_slime)
+    
+    # Determine if the count exceeds the threshold
+    return green_pixel_count > threshold
+                       
 def process_slime_removal(img_bgr, mask_gray):
     """
     Detects and removes green marker ink ("slime") from the histology image.
@@ -481,3 +497,28 @@ def main():
 
 # if __name__ == "__main__":
 #     main()
+
+def test_selecting_images():
+    base_data = Path("../../drive/MyDrive/AN2DL_Challenge2-TheBigBatchTheory/data/dataset")
+    train_dir = base_data / "train_data"
+    labels_csv = base_data / "train_labels.csv"
+    labels_df = pd.read_csv(labels_csv)
+    labels_df = labels_df.sort_values(by='sample_index')
+    selected_images = []
+    for _, row in tqdm(labels_df.iterrows(), total=len(labels_df), desc="Selecting Slides"):
+        fname = row['sample_index']
+        label = row['label']
+        img_path = train_dir / fname
+        if not img_path.exists(): 
+             found = list(train_dir.glob(f"**/{fname}")) 
+             if found: 
+                img_path = found[0]
+                img_bgr = load_image_cv2(img_path)
+                img_rgb = img_bgr[..., ::-1]
+                cls, _, _, _ = analyze_image_memory(img_rgb)
+                if cls != "SHREK":
+                    selected_images.append(img_path.stem)
+             else: continue
+    
+    print("Selected Images:", selected_images)
+    return
