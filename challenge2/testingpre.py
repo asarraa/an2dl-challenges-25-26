@@ -178,7 +178,7 @@ def analyze_image_memory(img_bgr):
     hsv = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2HSV) 
     
     # 1. Identify Foreground (everything that is not white background)
-    mask_foreground = (hsv[:,:,1] > 40) & (hsv[:,:,2] < 250)
+    mask_foreground = (hsv[:,:,1] > 15) & (hsv[:,:,2] < 250)
     foreground_pixels = np.count_nonzero(mask_foreground)
     
     if foreground_pixels < 100:
@@ -220,7 +220,7 @@ def analyze_image_memory(img_bgr):
         return "SHREK", ratio_tissue, ratio_shrek, shrek_dominance
 
     # Rule: If there is a decent amount of tissue, assume safe.
-    if ratio_tissue > 0.3:
+    if ratio_tissue > 0.05:
         return "SAFE", ratio_tissue, ratio_shrek, shrek_dominance
 
     # Fallback: If Shrek ratio is moderately high.
@@ -557,54 +557,6 @@ def process_test(preprocess_name=None):
             print("⚠️ No tiles generated for Test Set.")
     else:
         print("⚠️ test_data folder not found.")
-        
-def test_selecting_images():
-    labels_df = pd.read_csv(config.LABELS_CSV)
-    labels_df = labels_df.sort_values(by='sample_index')
-    selected_images = []
-    # for _, row in tqdm(labels_df.iterrows(), total=len(labels_df), desc="Selecting Slides"):
-    #     fname = row['sample_index']
-    #     img_path = config.TRAIN_DIR / fname
-    #     img_bgr = load_image_cv2(img_path)
-        
-    #     problems = ["img_0173.png", "img_0202.png", "img_0352.png"]
-    #     if contains_slime(img_bgr):
-    #         #print("\n", img_path.stem)
-    #         selected_images.append(img_path.stem)
-    #         if img_path in problems:
-    #             print(f"\nMacchia verde {img_path.stem}")# --> cls: {cls}, ratio_tissue: {ratio_tissue:.3f}, ratio_shrek: {ratio_shrek:.3f}, shrek_dominance: {shrek_dominance:.3f}")
-    #         continue
-    #     cls, ratio_tissue, ratio_shrek, shrek_dominance = analyze_image_memory(img_bgr)
-    #     if cls == "SHREK":
-    #         #print("\n", img_path.stem)
-    #         if img_path in problems:
-    #             print(f"\n{img_path.stem} --> cls: {cls}, ratio_tissue: {ratio_tissue:.3f}, ratio_shrek: {ratio_shrek:.3f}, shrek_dominance: {shrek_dominance:.3f}")
-    #         selected_images.append(img_path.stem)
-            
-    for _, row in labels_df.iterrows():
-        fname = row['sample_index']
-        img_path = config.TRAIN_DIR / fname
-        img_bgr = load_image_cv2(img_path)
-        print(f"Processing {img_path.stem}")
-        problems = ["img_0173.png", "img_0202.png", "img_0352.png"]
-        if contains_slime(img_bgr):
-            #print("\n", img_path.stem)
-            selected_images.append(img_path.stem)
-            if img_path in problems:
-                print(f"\nMacchia verde {img_path.stem}")# --> cls: {cls}, ratio_tissue: {ratio_tissue:.3f}, ratio_shrek: {ratio_shrek:.3f}, shrek_dominance: {shrek_dominance:.3f}")
-            continue
-        cls, ratio_tissue, ratio_shrek, shrek_dominance = analyze_image_memory(img_bgr)
-        if cls == "SHREK":
-            #print("\n", img_path.stem)
-            if img_path in problems:
-                print(f"\n{img_path.stem} --> cls: {cls}, ratio_tissue: {ratio_tissue:.3f}, ratio_shrek: {ratio_shrek:.3f}, shrek_dominance: {shrek_dominance:.3f}")
-            selected_images.append(img_path.stem)
-            
-    print("\nSelected Images: ", len(selected_images))
-    for i in selected_images:
-        print(i)
-    
-    return
 
 
 def prepare_test():
