@@ -539,7 +539,7 @@ def process_test(preprocess_name=None):
             # Process the slide (Test Mode: label=None, is_test_set=True)
             res = process_single_slide( #call process single slide with mask and corresponding mask
                 img_path, mask_path, None, 
-                out_test_img, out_test_mask, discard_dir, test_arrays_dir #directories
+                out_test_img, out_test_mask, discard_dir, test_arrays_dir, #directories
                 is_test_set=True
             )
         
@@ -575,9 +575,10 @@ def test_selecting_images():
             #print("\n", img_path.stem)
             selected_images.append(img_path.stem)
     
-    print("\nSelected Images:")
+    print("\nSelected Images: ", len(selected_images))
     for i in selected_images:
         print(i)
+    
     return
 
 
