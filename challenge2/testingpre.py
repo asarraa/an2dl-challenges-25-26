@@ -514,8 +514,7 @@ def test_selecting_images():
              if found: 
                 img_path = found[0]
                 img_bgr = load_image_cv2(img_path)
-                img_rgb = img_bgr[..., ::-1]
-                cls, _, _, _ = analyze_image_memory(img_rgb)
+                cls, _, _, _ = analyze_image_memory(img_bgr)
                 if cls == "SHREK":
                     print(f"Found: {img_path.name} classified as SHREK")
                     selected_images.append(img_path.stem)
