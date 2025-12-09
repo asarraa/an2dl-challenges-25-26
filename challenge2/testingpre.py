@@ -507,18 +507,12 @@ def test_selecting_images():
     selected_images = []
     for _, row in tqdm(labels_df.iterrows(), total=len(labels_df), desc="Selecting Slides"):
         fname = row['sample_index']
-        label = row['label']
         img_path = train_dir / fname
-        if not img_path.exists(): 
-             found = list(train_dir.glob(f"**/{fname}")) 
-             if found: 
-                img_path = found[0]
-                img_bgr = load_image_cv2(img_path)
-                cls, _, _, _ = analyze_image_memory(img_bgr)
-                if cls == "SHREK":
-                    print(f"Found: {img_path.name} classified as SHREK")
-                    selected_images.append(img_path.stem)
-             else: continue
+        img_bgr = load_image_cv2(img_path)
+        cls, _, _, _ = analyze_image_memory(img_bgr)
+        if cls == "SHREK":
+            print(f"Found: {img_path.name} classified as SHREK")
+            selected_images.append(img_path.stem)
     
     print("Selected Images:", selected_images)
     return
