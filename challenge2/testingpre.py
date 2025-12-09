@@ -4,6 +4,7 @@ import shutil
 import pandas as pd
 from pathlib import Path
 from tqdm import tqdm
+import config
 import os
 
 # =============================================================================
@@ -363,27 +364,12 @@ def main(do_test=True, preprocess_name=None):
     '''
     do_test: if applying also to
     '''
-
-    #base_data = Path("./")
-    
-    # Input Directories
-    # train_dir = base_data / "train_data"
-    # #test_dir = base_data / "test_data"
-    # labels_csv = base_data / "train_labels.csv"
-    base_dataset = BASE_DATA / "dataset"
-    base_preprocessed = BASE_DATA / "preprocessed"
-    
-    train_dir = base_dataset / "train_data"
-    labels_csv = base_dataset / "train_labels.csv"
-    test_dir = base_dataset / "test_data"
-
-
     if preprocess_name == None:
         print("[ERROR] Give a name to this preprocessing")
         return
 
     # Output Directories
-    single_preprocessing_dir = base_preprocessed / preprocess_name
+    single_preprocessing_dir = config.BASE_PREPROCESSED / preprocess_name
     
     # Create specific subdirectories for organized output
     #Train
@@ -443,7 +429,8 @@ def main(do_test=True, preprocess_name=None):
     # FASE 1: TRAINING SET PROCESSING
     # -------------------------------------------------------------------------
     print(">>> FASE 1: Processing TRAINING SET (Labels + Weights)")
-    
+    labels_csv = config.LABELS_CSV
+    train_dir = config.TRAIN_DIR
     if labels_csv.exists() and train_dir.exists():
         labels_df = pd.read_csv(labels_csv)
         
@@ -500,14 +487,14 @@ def main(do_test=True, preprocess_name=None):
     else:
         print("⚠️ train_data folder or train_labels.csv not found.")
         
-    if do_test and test_dir.exists():
-        
+    if do_test and config.TEST_DIR.exists():
         process_test(preprocess_name)
 
 
  #-------------------------------------------------------------------------
  #FASE 2: TEST SET PROCESSING
  #-------------------------------------------------------------------------
+
 def process_test(preprocess_name=None):
 
     if preprocess_name == None :
@@ -515,15 +502,9 @@ def process_test(preprocess_name=None):
         return
 
 
-    # Base Directories
-    base_dataset = BASE_DATA / "dataset"
-    base_preprocessed = BASE_DATA / "preprocessed"
-
-    #where test data are
-    test_dir = base_dataset / "test_data"
 
     #subfolder of preprocessed
-    single_preprocessing_dir = base_preprocessed / preprocess_name
+    single_preprocessing_dir = config.BASE_PREPROCESSED / preprocess_name
 
     #output directories
     out_test_img = single_preprocessing_dir / "test/images"
@@ -535,8 +516,8 @@ def process_test(preprocess_name=None):
 
     
     
-    
     print("\n>>> FASE 2: Processing TEST SET (Weights Only - No Labels)")
+    test_dir = config.TEST_DIR
     if test_dir.exists():
         test_rows = []
     
@@ -577,17 +558,13 @@ def process_test(preprocess_name=None):
     else:
         print("⚠️ test_data folder not found.")
         
-
 def test_selecting_images():
-    base_dataset = Path("../../drive/MyDrive/AN2DL_Challenge2-TheBigBatchTheory/data/dataset")
-    train_dir = base_dataset / "train_data"
-    labels_csv = base_dataset / "train_labels.csv"
-    labels_df = pd.read_csv(labels_csv)
+    labels_df = pd.read_csv(config.LABELS_CSV)
     labels_df = labels_df.sort_values(by='sample_index')
     selected_images = []
     for _, row in tqdm(labels_df.iterrows(), total=len(labels_df), desc="Selecting Slides"):
         fname = row['sample_index']
-        img_path = train_dir / fname
+        img_path = config.TRAIN_DIR / fname
         img_bgr = load_image_cv2(img_path)
         if contains_slime(img_bgr):
             #print("\n", img_path.stem)
@@ -605,7 +582,7 @@ def test_selecting_images():
 
 
 def prepare_test():
-    base_dataset = Path("../../drive/MyDrive/AN2DL_Challenge2-TheBigBatchTheory/data/dataset")
+    base_dataset = BASE_DATA / "dataset"
 
     # Output Directories
     single_preprocessing_dir = base_dataset / "testpreprocessing"

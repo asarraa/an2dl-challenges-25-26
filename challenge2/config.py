@@ -1,3 +1,5 @@
+from pathlib import Path
+
 # Set up loss function and optimizer
 #criterion = nn.CrossEntropyLoss() --> substituted by the following
 MODEL_NAME = "CNN"
@@ -55,3 +57,13 @@ RESNET_DEFAULTS = {
     "use_pretrained": True,
     "backbone": "resnet18"
 }
+
+
+# 5. DIRECTORIES
+BASE_DATA = Path("../../drive/MyDrive/AN2DL_Challenge2-TheBigBatchTheory/data")
+BASE_DATASET = BASE_DATA / "dataset"
+BASE_PREPROCESSED = BASE_DATA / "preprocessed"
+
+TRAIN_DIR = BASE_DATASET / "train_data"
+TEST_DIR = BASE_DATASET / "test_data"
+LABELS_CSV = BASE_DATASET / "train_labels.csv"
