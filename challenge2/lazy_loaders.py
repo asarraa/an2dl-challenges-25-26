@@ -103,16 +103,11 @@ class TestImageDataset(torch.utils.data.Dataset):
     """
     Dataset for inference that returns the image tensor and the filename (no labels).
     """
-    def __init__(self, filenames, images_dir, masks_dir=None, add_mask_channel=False):#, transform=None):
+    def __init__(self, filenames, images_dir, masks_dir=None, add_mask_channel=False):
         self.filenames = list(filenames)
         self.images_dir = Path(images_dir)
         self.masks_dir = Path(masks_dir) if masks_dir else None
         self.add_mask_channel = add_mask_channel
-        #self.transform = transform
-        #self.to_tensor = transforms.Compose([
-        #     transforms.ToImage(),
-        #     transforms.ToDtype(torch.float32, scale=True)
-        # ])
 
     def __len__(self):
         return len(self.filenames)
@@ -137,11 +132,8 @@ class TestImageDataset(torch.utils.data.Dataset):
             image = np.dstack((image, mask))
 
         image_tensor = self.to_tensor(Image.fromarray(image))
-        # if self.transform:
-        #     image_tensor = self.transform(image_tensor)
 
         return image_tensor, img_name
-
 
 def make_loader(ds, batch_size, shuffle, drop_last):
     """
@@ -165,7 +157,6 @@ def make_loader(ds, batch_size, shuffle, drop_last):
         persistent_workers=True,    # Keep workers alive between epochs
     )
 
-
 def _resolve_paths(base_path, add_mask_channel=False, is_test=False):
     """
     Compute image/mask/csv paths. If base_path is provided, it is expected to be
@@ -185,23 +176,6 @@ def _resolve_paths(base_path, add_mask_channel=False, is_test=False):
         csv_name = "test_patches.csv" if is_test else "train_patches.csv"
         csv_path = split_dir / split / csv_name
     return images_dir, masks_dir, csv_path
-
-
-# def _prepare_label_mapping(df, label_map=None):
-#     """
-#     Apply a deterministic label mapping. If no mapping is provided, fall back to
-#     the order of appearance in the dataframe.
-#     """
-#     if label_map is None:
-#         label_map = {label: idx for idx, label in enumerate(df['label'].unique())}
-#     else:
-#         missing = set(df['label'].unique()) - set(label_map.keys())
-#         if missing:
-#             raise ValueError(f"Label mapping missing classes: {missing}")
-#     df = df.copy()
-#     df['label'] = df['label'].map(label_map)
-#     inv_label_map = {v: k for k, v in label_map.items()}
-#     return df, label_map, inv_label_map
 
 def get_loaders(augmentation=None, batch_size=LOADER_PARAMS["batch_size"], base_path=None, add_mask_channel=False):
     """

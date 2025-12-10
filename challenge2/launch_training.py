@@ -84,12 +84,17 @@ def start_training(model_name="CNN", model_params=None, training_params=None, de
         model_params (dict): Dictionary of overrides for the model architecture.
         training_params (dict): Dictionary of overrides for training (lr, epochs, etc).
     """
-    os.makedirs("models", exist_ok=True)
-    os.makedirs("experiments", exist_ok=True)
+    # paths deleted because now ModelRegistry handles them internally (through config.py)
+    
+    # os.makedirs("models", exist_ok=True)
+    # os.makedirs("experiments", exist_ok=True)
 
+    # if not config.EXPERIMENTS_DIR.exists():
+    #     config.EXPERIMENTS_DIR.mkdir(parents=True, exist_ok=True)
+    
     # --- 0. INIT REGISTRY & ID (MOVED TO TOP) ---
     # We create the ID now so Comet and Registry share it
-    reg_manager = registry_module.ModelRegistry(base_dir="experiments")
+    reg_manager = registry_module.ModelRegistry()
     run_id = reg_manager.generate_id(prefix=model_name)
 
     best_model, best_performance = initialize_training()
@@ -175,7 +180,7 @@ def start_training(model_name="CNN", model_params=None, training_params=None, de
     }
 
     comet_experiment.log_parameters(hyper_params)
-    data_input_shape =  data_input_shape #TODO: take it from preprocessing: preprocessing.get_data_input_shape()
+    #data_input_shape =  data_input_shape
 
     # -------------------------------------------------------
     # 2. INSTANTIATE (Using the merged configs)
@@ -194,8 +199,8 @@ def start_training(model_name="CNN", model_params=None, training_params=None, de
     optimizer, scaler = get_optimizer_and_scaler(current_train_cfg['optimizer_name'], model, current_train_cfg['learning_rate'], current_train_cfg['l2_lambda'], device_obj)
 
     # Get data loader
-    train_loader = train_loader #TODO: take it from preprocessing
-    val_loader = val_loader  #TODO: take it from preprocessing:     preprocessing.get_data_loaders()
+    # train_loader = train_loader
+    # val_loader = val_loader
 
     # TensorBoard
     writer = SummaryWriter(f"tensorboard/{run_id}")

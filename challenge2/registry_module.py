@@ -2,22 +2,25 @@ import os
 import json
 import datetime
 import torch
+import config
 
 class ModelRegistry:
-    def __init__(self, base_dir="experiments"):
+    def __init__(self):
         """
         Args:
             base_dir: Folder where models and the registry.json will be saved.
         """
-        self.base_dir = base_dir
-        self.registry_path = os.path.join(base_dir, "registry.json") # /experiments/registry.json
-        self.models_dir = os.path.join(base_dir, "models") # /experiments/models
+        self.base_dir = config.EXPERIMENTS_DIR
+        self.registry_path = config.EXPERIMENTS_DIR / "registry.json" #os.path.join(base_dir, "registry.json") # /experiments/registry.json
+        self.models_dir = config.MODELS_DIR #os.path.join(base_dir, "models") # /experiments/models
         
         # Create directories if they don't exist
-        os.makedirs(self.models_dir, exist_ok=True)
+        self.base_dir.mkdir(parents=True, exist_ok=True)
+        self.models_dir.mkdir(parents=True, exist_ok=True)
+        #os.makedirs(self.models_dir, exist_ok=True)
         
         # Load existing registry or create new
-        if os.path.exists(self.registry_path):
+        if self.registry_path.exists():
             try:
                 with open(self.registry_path, 'r') as f:
                     self.registry = json.load(f)
@@ -48,7 +51,7 @@ class ModelRegistry:
         
         # 2. Define File Paths
         model_filename = f"{exp_id}.pt"
-        model_path = os.path.join(self.models_dir, model_filename)
+        model_path = self.models_dir / model_filename #os.path.join(self.models_dir, model_filename)
         
         # 3. Save PyTorch Model
         # It's good practice to save optimizer state too for resuming
@@ -76,8 +79,8 @@ class ModelRegistry:
         with open(self.registry_path, 'w') as f:
             json.dump(self.registry, f, indent=4)
             
-        print(f"✅ Model saved to: {model_path}")
-        print(f"✅ Registry updated: ID {exp_id}")
+        print(f"Model saved to: {model_path}")
+        print(f"Registry updated: ID {exp_id}")
         
         return exp_id
     
