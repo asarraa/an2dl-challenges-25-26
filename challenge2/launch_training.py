@@ -21,13 +21,13 @@ from training_engine import fit
 # Helper Functions
 # -----------------------------
 
-def print_gpu_usage(checkpoint_name=""):
-    if torch.cuda.is_available():
-        allocated = torch.cuda.memory_allocated() / 1024**3  # Converte byte in GB
-        reserved = torch.cuda.memory_reserved() / 1024**3    # Memoria riservata dalla cache di PyTorch
-        print(f"❗ [MEMORIA] {checkpoint_name} -> Allocata: {allocated:.2f} GB | Riservata: {reserved:.2f} GB")
-    else:
-        print("❗ [MEMORIA] CUDA non disponibile.")
+# def print_gpu_usage(checkpoint_name=""):
+#     if torch.cuda.is_available():
+#         allocated = torch.cuda.memory_allocated() / 1024**3  # Converte byte in GB
+#         reserved = torch.cuda.memory_reserved() / 1024**3    # Memoria riservata dalla cache di PyTorch
+#         print(f"❗ [MEMORIA] {checkpoint_name} -> Allocata: {allocated:.2f} GB | Riservata: {reserved:.2f} GB")
+#     else:
+#         print("❗ [MEMORIA] CUDA non disponibile.")
 
 def get_device(cfg_device):
     if cfg_device == "cuda" and torch.cuda.is_available():
@@ -127,7 +127,7 @@ def start_training(model_name="CNN", model_params=None, training_params=None, de
     else:
         print("WARNING: Using CPU (this will be slow!)", flush=True)
     print(f"--- Starting {model_name} on {device_obj} ---", flush=True)
-    print_gpu_usage("Checkpoint 1")
+    #print_gpu_usage("Checkpoint 1")
     # -------------------------------------------------------
     # 1. SETUP CONFIGURATION (Merge Defaults + Overrides)
     # -------------------------------------------------------
@@ -169,7 +169,7 @@ def start_training(model_name="CNN", model_params=None, training_params=None, de
     print(f"Starting {model_name} model training...")
     print("Training Configuration:\n", train_parameters_summary)
     print("Model Configuration:\n", model_parameters_summary)
-    print_gpu_usage("Checkpoint 2")
+    #print_gpu_usage("Checkpoint 2")
 
     #Initialize Comet logging
     comet_experiment = start(
@@ -193,7 +193,7 @@ def start_training(model_name="CNN", model_params=None, training_params=None, de
     # -------------------------------------------------------
     # 2. INSTANTIATE (Using the merged configs)
     # -------------------------------------------------------
-    print_gpu_usage("Checkpoint 3")
+    #print_gpu_usage("Checkpoint 3")
 
     if debug_mode:
         print("[DEBUG] About to instantiate model...", flush=True)
@@ -201,7 +201,7 @@ def start_training(model_name="CNN", model_params=None, training_params=None, de
     model = instantiate_model(model_name, current_model_cfg, data_input_shape, device_obj)
     if debug_mode:
         print("[DEBUG] Model instantiated successfully", flush=True) 
-    print_gpu_usage("Checkpoint 4")
+    #print_gpu_usage("Checkpoint 4")
     
     #model = model.to(device_obj) 
     # Get criterion
@@ -232,7 +232,7 @@ def start_training(model_name="CNN", model_params=None, training_params=None, de
     # -------------------------------------------------------
     # 3. RUN TRAINING
     # -------------------------------------------------------
-    print_gpu_usage("Checkpoint 5")
+    #print_gpu_usage("Checkpoint 5")
 
     if debug_mode:
         print("[DEBUG] About to call fit()...", flush=True)
