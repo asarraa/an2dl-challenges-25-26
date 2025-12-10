@@ -56,7 +56,7 @@ RESNET_DEFAULTS = {
     "num_classes": 4,
     "use_pretrained": True,
     "backbone": "resnet18",
-    "input_channels": 4  # default expects RGB + mask; override to 3 when training on RGB-only tiles
+    "input_channels": 3  # default expects RGB + mask; override to 3 when training on RGB-only tiles
 }
 
 
