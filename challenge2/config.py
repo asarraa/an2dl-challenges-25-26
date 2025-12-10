@@ -73,6 +73,6 @@ LABELS_CSV = BASE_DATASET / "train_labels.csv"
 LABEL_MAP = {
     "Luminal A": 0,
     "Luminal B": 1,
-    "HER2-(+)": 2,
+    "HER2(+)": 2,
     "Triple negative": 3
     }
