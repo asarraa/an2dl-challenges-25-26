@@ -1,7 +1,6 @@
 import torch
 import numpy as np
 from sklearn.metrics import f1_score
-from launch_training import print_gpu_usage
 '''
 try:
     from launch_training import DEBUG_MODE
@@ -9,7 +8,13 @@ except ImportError:
     DEBUG_MODE = False  # Fallback if imported elsewhere
 '''
 
-
+def print_gpu_usage(checkpoint_name=""):
+    if torch.cuda.is_available():
+        allocated = torch.cuda.memory_allocated() / 1024**3  # Converte byte in GB
+        reserved = torch.cuda.memory_reserved() / 1024**3    # Memoria riservata dalla cache di PyTorch
+        print(f"❗ [MEMORIA] {checkpoint_name} -> Allocata: {allocated:.2f} GB | Riservata: {reserved:.2f} GB")
+    else:
+        print("❗ [MEMORIA] CUDA non disponibile.")
 # -----------------------------
 # Training functions
 # -----------------------------
