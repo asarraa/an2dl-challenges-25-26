@@ -15,7 +15,7 @@ import registry_module
 from training_engine import fit 
 
 # ===== DEBUG MODE =====
-DEBUG_MODE = True  # Set to True to enable debug prints
+#DEBUG_MODE = True  # Set to True to enable debug prints
 
 # -----------------------------
 # Helper Functions
@@ -26,15 +26,13 @@ def get_device(cfg_device):
         return torch.device("cuda")
     return torch.device("cpu")
 
-
 def initialize_training():
     # Initialize best model tracking variables
     best_model = None
     best_performance = float('-inf')
     return best_model, best_performance
 
-def instantiate_model(model_name, batch_size, current_model_cfg, data_input_shape, device_obj):
-
+def instantiate_model(model_name, current_model_cfg, data_input_shape, device_obj):
     # We unpack (**current_model_cfg) directly into the class
     if model_name == "CNN":
         model = models.CNN(**current_model_cfg)
@@ -59,7 +57,6 @@ def instantiate_model(model_name, batch_size, current_model_cfg, data_input_shap
     #model_graph.visual_graph
     return model
 
-
 def get_criterion_from_name(criterion_name):
 # Default to CrossEntropy if name matches or if generic "crossentropy" is used
     if criterion_name == "CrossEntropyLoss" or criterion_name == "crossentropy":
@@ -67,7 +64,6 @@ def get_criterion_from_name(criterion_name):
     else:
         print(f"Warning: Criterion '{criterion_name}' not found. Using CrossEntropyLoss.")
         return nn.CrossEntropyLoss()
-    
 
 def get_optimizer_and_scaler(optimizer_name, model, learning_rate, l2_lambda, device_obj):
     # Define optimizer with L2 regularization
@@ -81,19 +77,17 @@ def get_optimizer_and_scaler(optimizer_name, model, learning_rate, l2_lambda, de
     scaler = torch.amp.GradScaler(enabled=(device_obj.type == 'cuda'))
     return optimizer, scaler
 
-
-def start_training(model_name="CNN", model_params=None, training_params=None, device=None, train_loader=None, val_loader=None, data_input_shape=None):
+def start_training(model_name="CNN", model_params=None, training_params=None, device=None, train_loader=None, val_loader=None, data_input_shape=None, debug_mode=True):
     """
     Args:
         model_name (str): "CNN" or "EfficientNet"
         model_params (dict): Dictionary of overrides for the model architecture.
         training_params (dict): Dictionary of overrides for training (lr, epochs, etc).
     """
-
     os.makedirs("models", exist_ok=True)
     os.makedirs("experiments", exist_ok=True)
 
-       # --- 0. INIT REGISTRY & ID (MOVED TO TOP) ---
+    # --- 0. INIT REGISTRY & ID (MOVED TO TOP) ---
     # We create the ID now so Comet and Registry share it
     reg_manager = registry_module.ModelRegistry(base_dir="experiments")
     run_id = reg_manager.generate_id(prefix=model_name)
@@ -106,7 +100,7 @@ def start_training(model_name="CNN", model_params=None, training_params=None, de
     elif device == "cuda" and torch.cuda.is_available():
         device_obj = torch.device("cuda")
     elif device == "cuda":
-        print("⚠️ WARNING: CUDA requested but not available! Using CPU instead.", flush=True)
+        print("WARNING: CUDA requested but not available! Using CPU instead.", flush=True)
         device_obj = torch.device("cpu")
     elif device == "cpu":
         device_obj = torch.device("cpu")
@@ -114,14 +108,13 @@ def start_training(model_name="CNN", model_params=None, training_params=None, de
         # Default: use CUDA if available, otherwise CPU
         device_obj = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     
-    if DEBUG_MODE:
+    if debug_mode:
         print(f"[DEBUG] Device type: {type(device)}, Final device: {device_obj}, CUDA available: {torch.cuda.is_available()}", flush=True)
     if device_obj.type == "cuda":
-        print(f"✓ Using GPU: {torch.cuda.get_device_name(0)}", flush=True)
+        print(f"Using GPU: {torch.cuda.get_device_name(0)}", flush=True)
     else:
-        print("⚠️ WARNING: Using CPU (this will be slow!)", flush=True)
+        print("WARNING: Using CPU (this will be slow!)", flush=True)
     print(f"--- Starting {model_name} on {device_obj} ---", flush=True)
-
 
     # -------------------------------------------------------
     # 1. SETUP CONFIGURATION (Merge Defaults + Overrides)
@@ -165,7 +158,7 @@ def start_training(model_name="CNN", model_params=None, training_params=None, de
     print("Training Configuration:\n", train_parameters_summary)
     print("Model Configuration:\n", model_parameters_summary)
 
-        #Initialize Comet logging
+    #Initialize Comet logging
     comet_experiment = start(
       api_key="nhvfD4vUpZNMoJQ3dEjOwIeua",
       project_name="test",
@@ -182,20 +175,17 @@ def start_training(model_name="CNN", model_params=None, training_params=None, de
     }
 
     comet_experiment.log_parameters(hyper_params)
-
-
     data_input_shape =  data_input_shape #TODO: take it from preprocessing: preprocessing.get_data_input_shape()
-
 
     # -------------------------------------------------------
     # 2. INSTANTIATE (Using the merged configs)
     # -------------------------------------------------------
 
-    if DEBUG_MODE:
+    if debug_mode:
         print("[DEBUG] About to instantiate model...", flush=True)
     # Instantiate Model
-    model = instantiate_model(model_name, config.LOADER_PARAMS['batch_size'], current_model_cfg, data_input_shape, device_obj)
-    if DEBUG_MODE:
+    model = instantiate_model(model_name, current_model_cfg, data_input_shape, device_obj)
+    if debug_mode:
         print("[DEBUG] Model instantiated successfully", flush=True)        
     #model = model.to(device_obj) 
     # Get criterion
@@ -221,13 +211,13 @@ def start_training(model_name="CNN", model_params=None, training_params=None, de
             x = torch.randn(1, *data_input_shape).to(device_obj)
             writer.add_graph(model, x)
     except Exception as e:
-        print(f"⚠️ Warning: TensorBoard Graph logging failed (skipping): {e}")
+        print(f"Warning: TensorBoard Graph logging failed (skipping): {e}")
 
     # -------------------------------------------------------
     # 3. RUN TRAINING
     # -------------------------------------------------------
 
-    if DEBUG_MODE:
+    if debug_mode:
         print("[DEBUG] About to call fit()...", flush=True)
     # Train model and track training history
     model, training_history = fit(
@@ -286,4 +276,3 @@ def start_training(model_name="CNN", model_params=None, training_params=None, de
     comet_experiment.end()
     
     return model, training_history
-

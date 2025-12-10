@@ -61,10 +61,18 @@ RESNET_DEFAULTS = {
 
 
 # 5. DIRECTORIES
-BASE_DATA = Path("./data")
+#BASE_DATA = Path("../../drive/MyDrive/AN2DL_Challenge2-TheBigBatchTheory/data") # path for colab
+BASE_DATA = Path("./data") # local path
 BASE_DATASET = BASE_DATA / "dataset"
 BASE_PREPROCESSED = BASE_DATA / "preprocessed"
 
 TRAIN_DIR = BASE_DATASET / "train_data"
 TEST_DIR = BASE_DATASET / "test_data"
 LABELS_CSV = BASE_DATASET / "train_labels.csv"
+
+LABEL_MAP = {
+    "Luminal A": 0,
+    "Luminal B": 1,
+    "HER2-(+)": 2,
+    "Triple negative": 3
+    }

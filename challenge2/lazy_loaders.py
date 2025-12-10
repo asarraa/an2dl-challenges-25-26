@@ -15,14 +15,6 @@ SEED = 42
 
 LOADER_PARAMS = config.LOADER_PARAMS
 
-# Canonical label mapping requested for the challenge
-DEFAULT_LABEL_MAP = {
-    "Luminal A": 0,
-    "Luminal B": 1,
-    "HER2(+)": 2,
-    "Triple negative": 3,
-}
-
 class LazyImageDataset(torch.utils.data.Dataset):
     """
     Memory-efficient Dataset that loads images from disk on-demand.
@@ -111,16 +103,16 @@ class TestImageDataset(torch.utils.data.Dataset):
     """
     Dataset for inference that returns the image tensor and the filename (no labels).
     """
-    def __init__(self, filenames, images_dir, masks_dir=None, add_mask_channel=False, transform=None):
+    def __init__(self, filenames, images_dir, masks_dir=None, add_mask_channel=False):#, transform=None):
         self.filenames = list(filenames)
         self.images_dir = Path(images_dir)
         self.masks_dir = Path(masks_dir) if masks_dir else None
         self.add_mask_channel = add_mask_channel
-        self.transform = transform
-        self.to_tensor = transforms.Compose([
-            transforms.ToImage(),
-            transforms.ToDtype(torch.float32, scale=True)
-        ])
+        #self.transform = transform
+        #self.to_tensor = transforms.Compose([
+        #     transforms.ToImage(),
+        #     transforms.ToDtype(torch.float32, scale=True)
+        # ])
 
     def __len__(self):
         return len(self.filenames)
@@ -145,8 +137,8 @@ class TestImageDataset(torch.utils.data.Dataset):
             image = np.dstack((image, mask))
 
         image_tensor = self.to_tensor(Image.fromarray(image))
-        if self.transform:
-            image_tensor = self.transform(image_tensor)
+        # if self.transform:
+        #     image_tensor = self.transform(image_tensor)
 
         return image_tensor, img_name
 
@@ -179,41 +171,39 @@ def _resolve_paths(base_path, add_mask_channel=False, is_test=False):
     Compute image/mask/csv paths. If base_path is provided, it is expected to be
     the root of a preprocessed dataset containing train/test subfolders.
     """
+    split = "test" if is_test else "train"
     if base_path is not None:
         root = Path(base_path)
-        split = "test" if is_test else "train"
         images_dir = root / split / "images"
         masks_dir = root / split / "masks" if add_mask_channel else None
         csv_name = "test_patches.csv" if is_test else "train_patches.csv"
-        csv_path = root / csv_name
+        csv_path = root / split / csv_name
     else:
         split_dir = config.TEST_DIR if is_test else config.TRAIN_DIR
         images_dir = split_dir / "images"
         masks_dir = split_dir / "masks" if add_mask_channel else None
         csv_name = "test_patches.csv" if is_test else "train_patches.csv"
-        csv_path = split_dir / csv_name
+        csv_path = split_dir / split / csv_name
     return images_dir, masks_dir, csv_path
 
 
-def _prepare_label_mapping(df, label_map=None):
-    """
-    Apply a deterministic label mapping. If no mapping is provided, fall back to
-    the order of appearance in the dataframe.
-    """
-    if label_map is None:
-        label_map = {label: idx for idx, label in enumerate(df['label'].unique())}
-    else:
-        missing = set(df['label'].unique()) - set(label_map.keys())
-        if missing:
-            raise ValueError(f"Label mapping missing classes: {missing}")
-    df = df.copy()
-    df['label'] = df['label'].map(label_map)
-    inv_label_map = {v: k for k, v in label_map.items()}
-    return df, label_map, inv_label_map
+# def _prepare_label_mapping(df, label_map=None):
+#     """
+#     Apply a deterministic label mapping. If no mapping is provided, fall back to
+#     the order of appearance in the dataframe.
+#     """
+#     if label_map is None:
+#         label_map = {label: idx for idx, label in enumerate(df['label'].unique())}
+#     else:
+#         missing = set(df['label'].unique()) - set(label_map.keys())
+#         if missing:
+#             raise ValueError(f"Label mapping missing classes: {missing}")
+#     df = df.copy()
+#     df['label'] = df['label'].map(label_map)
+#     inv_label_map = {v: k for k, v in label_map.items()}
+#     return df, label_map, inv_label_map
 
-
-def get_loaders(augmentation=None, batch_size=LOADER_PARAMS["batch_size"], base_path=None,
-                add_mask_channel=False, label_map=None, return_label_map=False):
+def get_loaders(augmentation=None, batch_size=LOADER_PARAMS["batch_size"], base_path=None, add_mask_channel=False):
     """
     Create train and validation dataloaders using lazy loading (no RAM overload).
     
@@ -226,8 +216,8 @@ def get_loaders(augmentation=None, batch_size=LOADER_PARAMS["batch_size"], base_
     # Read CSV metadata into memory (very small footprint)
     df = pd.read_csv(csv_path)
     
-    # Create mapping: string labels → integer labels
-    df, label_map, inv_label_map = _prepare_label_mapping(df, label_map or DEFAULT_LABEL_MAP)
+    # Replace labels in dataframe with integer mapping
+    df['label'] = df['label'].map(config.LABEL_MAP)
     
     # Split dataset into train and validation sets (stratified by label distribution)
     train_df, val_df = train_test_split(
@@ -276,48 +266,51 @@ def get_loaders(augmentation=None, batch_size=LOADER_PARAMS["batch_size"], base_
     val_loader = make_loader(val_ds, batch_size=batch_size, shuffle=False, drop_last=False)
     
     # Print dataset statistics
-    print(f"✅ Train samples: {len(train_ds)}, Val samples: {len(val_ds)}")
-    print(f"✅ Input shape: {input_shape}")
+    print(f"Train samples: {len(train_ds)}, Val samples: {len(val_ds)}")
+    print(f"Input shape: {input_shape}")
     
-    # Return dataloaders, input shape, and optionally the label mappings
-    if return_label_map:
-        return train_loader, val_loader, input_shape, label_map, inv_label_map
+    # Return dataloaders and input shape
     return train_loader, val_loader, input_shape
 
 
-def get_test_loader(add_mask_channel=False, augmentation=None, batch_size=LOADER_PARAMS["batch_size"], base_path=None):
-    """
-    Create a dataloader for the test set (no labels). Useful for inference.
-    """
+def get_test_loaders(add_mask_channel=False, batch_size=LOADER_PARAMS["batch_size"], base_path=None):
     images_dir, masks_dir, csv_path = _resolve_paths(base_path, add_mask_channel, is_test=True)
 
+    # Read CSV metadata into memory (very small footprint)
     df = pd.read_csv(csv_path)
-
+    
+    # Create mapping: string labels → integer labels
+    df['label'] = df['label'].map(config.LABEL_MAP)
+    
+    # Load one sample image for determining input shape
     sample_path = images_dir / df.iloc[0]['sample_index']
     sample_img = cv2.imread(str(sample_path))
     if sample_img is None:
         raise FileNotFoundError(f"Could not load sample image {sample_path}")
-
+    
+    # Determine shape depending on whether masks are appended
     if add_mask_channel:
         sample_mask = cv2.imread(str(masks_dir / df.iloc[0]['sample_index']), cv2.IMREAD_GRAYSCALE)
         if sample_mask is None:
             raise FileNotFoundError(f"Could not load sample mask {masks_dir / df.iloc[0]['sample_index']}")
-        input_shape = (4, sample_img.shape[0], sample_img.shape[1])
+        # Input shape becomes 4 channels (RGB + Mask)
+        input_shape = (4, sample_img.shape[0], sample_img.shape[1])  # (C, H, W)
     else:
-        input_shape = (sample_img.shape[2], sample_img.shape[0], sample_img.shape[1])
-
-    test_augmentation = augmentation
-
-    test_ds = TestImageDataset(
+        # Standard shape: channels, height, width
+        input_shape = (sample_img.shape[2], sample_img.shape[0], sample_img.shape[1])  # (C, H, W)
+    
+    # Create test dataset
+    ds = TestImageDataset(
         filenames=df['sample_index'],
         images_dir=images_dir,
         masks_dir=masks_dir,
-        add_mask_channel=add_mask_channel,
-        transform=test_augmentation
+        add_mask_channel=add_mask_channel
     )
-
-    test_loader = make_loader(test_ds, batch_size=batch_size, shuffle=False, drop_last=False)
-
-    print(f"✅ Test samples: {len(test_ds)}")
-    print(f"✅ Input shape: {input_shape}")
+    
+    # Create DataLoaders for training and validation
+    test_loader = make_loader(ds, batch_size=batch_size, shuffle=True, drop_last=False)
+    
+    print(f"Test samples: {len(ds)}, Input shape: {input_shape}")
+    
+    # Return dataloader and input image shape
     return test_loader, input_shape

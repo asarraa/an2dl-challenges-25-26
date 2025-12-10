@@ -197,9 +197,9 @@ def process_single_slide(img_path, mask_path, label, output_img_dir, is_test_set
     base_name = img_path.stem # e.g., "img_001"
     
     # Multi-channel Masking:
-    # Dividi per 255 per avere 0 e 1, poi moltiplica
-    mask_boolean = (mask / 255).astype(np.uint8)
-    img = (img_bgr * mask_boolean[:, :, np.newaxis]).astype(np.uint8)
+    #mask_boolean = (mask / 255).astype(np.uint8)
+    #img = (img_bgr * mask_boolean[:, :, np.newaxis]).astype(np.uint8)
+    img = cv2.bitwise_and(img_bgr, img_bgr, mask=mask)
 
     # Iterate over the image with the defined stride
     for y in range(0, h, STRIDE):
@@ -345,7 +345,7 @@ def preprocess(do_test=True, preprocess_name=None):
             # Reorder columns for clarity
             cols = ['sample_index', 'original_sample', 'label']
             train_df = train_df[cols]
-            train_df.to_csv(single_preprocessing_dir / "train_patches.csv", index=False)
+            train_df.to_csv(single_preprocessing_dir / "train/train_patches.csv", index=False)
             print(f"✅ Training Tiles Saved: {len(train_rows)}")
         else:
             print("⚠️ No tiles generated for Training Set.")
@@ -402,7 +402,7 @@ def process_test(preprocess_name=None):
             # Reorder columns (No Label column here)
             cols = ['sample_index', 'original_sample']
             test_df = test_df[cols]
-            test_df.to_csv(single_preprocessing_dir / "test_patches.csv", index=False)
+            test_df.to_csv(single_preprocessing_dir / "test/test_patches.csv", index=False)
             print(f"✅ Test Tiles Saved: {len(test_rows)}")
         else:
             print("⚠️ No tiles generated for Test Set.")
