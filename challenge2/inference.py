@@ -6,6 +6,7 @@ import os
 from pathlib import Path
 from typing import Dict, Optional, Tuple
 import models
+from torch.utils.data import DataLoader 
 
 
 
@@ -36,11 +37,11 @@ def make_inference(loader, device, input_shape, model_path, model_name, batch_si
     )
     model.to(device)
 
-    print(f"[INFO] Inference on {len(ds)} patches | batch_size={batch_size} | device={device}")
     tile_preds = predict(model, loader, device)
 
     submission, slide_map = majority_vote(tile_preds, df_test, inv_label_map)
     output.parent.mkdir(parents=True, exist_ok=True)
+    output = Path(output)
     submission.to_csv(output, index=False)
     print(f"[INFO] Saved submission to {output}")
 
@@ -84,7 +85,7 @@ def load_model(
         backbone = cfg.get("backbone", "resnet18")
         use_pretrained = cfg.get("use_pretrained", False)
         if ckpt_channels == 4 or c == 4:
-            print("[ERROR] Tried using HistologyResNet witih 4 input channels, which is obsolete")
+            raise ValueError("[ERROR] Tried using HistologyResNet with 4 input channels, which is obsolete and not supported.")
             #model = LegacyHistologyResNet(num_classes=num_classes, use_pretrained=use_pretrained, backbone=backbone)
         else:
             model_cfg = config.RESNET_DEFAULTS.copy()
