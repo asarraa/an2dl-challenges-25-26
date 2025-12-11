@@ -12,10 +12,10 @@ class ModelRegistry:
         Args:
             base_dir: Folder where models and the registry.json will be saved.
         """
-        local_data_path=Path(local_data_path)
-        self.base_dir = local_data_path + config.EXPERIMENTS_DIR
-        self.registry_path = local_data_path + config.EXPERIMENTS_DIR / "registry.json" #os.path.join(base_dir, "registry.json") # /experiments/registry.json
-        self.models_dir = local_data_path + config.MODELS_DIR #os.path.join(base_dir, "models") # /experiments/models
+        
+        self.base_dir = local_data_path / config.EXPERIMENTS_DIR
+        self.registry_path = local_data_path / config.EXPERIMENTS_DIR / "registry.json" #os.path.join(base_dir, "registry.json") # /experiments/registry.json
+        self.models_dir = local_data_path / config.MODELS_DIR #os.path.join(base_dir, "models") # /experiments/models
         
         # Create directories if they don't exist
         self.base_dir.mkdir(parents=True, exist_ok=True)
