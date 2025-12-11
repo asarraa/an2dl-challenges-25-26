@@ -155,7 +155,7 @@ def validate_one_epoch(model, val_loader, criterion, device, debug_mode=True):
 
 def fit(model, train_loader, val_loader, epochs, criterion, optimizer, scaler, device,
         l1_lambda=0, l2_lambda=0, patience=0, evaluation_metric="val_f1", mode='max',
-        restore_best_weights=True, writer=None, verbose=10, experiment_name="", comet_experiment=None, debug_mode=True):
+        restore_best_weights=True, writer=None, verbose=10, experiment_name="", comet_experiment=None, debug_mode=True, local_data_path=None):
     """
     Train the neural network model on the training data and validate on the validation data.
 
@@ -254,11 +254,12 @@ def fit(model, train_loader, val_loader, epochs, criterion, optimizer, scaler, d
             current_metric = training_history[evaluation_metric][-1]
             is_improvement = (current_metric > best_metric) if mode == 'max' else (current_metric < best_metric)
 
-            os.makedirs("models", exist_ok=True)
+            fit_models_folder = str(local_data_path)+"/fit_models"
+            os.makedirs(fit_models_folder, exist_ok=True)
 
             if is_improvement:
                 best_metric = current_metric
-                torch.save(model.state_dict(), "models/"+experiment_name+'_model.pt')
+                torch.save(model.state_dict(), fit_models_folder+"/"+experiment_name+'_model.pt')
                 patience_counter = 0
             else:
                 patience_counter += 1
@@ -268,18 +269,18 @@ def fit(model, train_loader, val_loader, epochs, criterion, optimizer, scaler, d
 
     # Restore best model weights if early stopping was used
     if restore_best_weights and patience > 0:
-        model.load_state_dict(torch.load("models/"+experiment_name+'_model.pt'))
+        model.load_state_dict(torch.load(fit_models_folder+"/"+experiment_name+'_model.pt'))
         print(f"Best model restored from epoch {best_epoch} with {evaluation_metric} {best_metric:.4f}")
 
     # Save final model if no early stopping
     if patience == 0:
-        torch.save(model.state_dict(), "models/"+experiment_name+'_model.pt')
+        torch.save(model.state_dict(), fit_models_folder+"/"+experiment_name+'_model.pt')
 
     # Close TensorBoard writer
     if writer is not None:
         writer.close()
 
-    comet_experiment.log_model(name="test1", file_or_folder="models/"+experiment_name+'_model.pt')
+    comet_experiment.log_model(name="test1", file_or_folder=fit_models_folder+"/"+experiment_name+'_model.pt')
 
     #comet_experiment.end() 
     return model, training_history

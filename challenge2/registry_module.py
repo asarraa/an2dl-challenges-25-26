@@ -5,21 +5,29 @@ import torch
 import config
 
 class ModelRegistry:
-    def __init__(self):
+    def __init__(self, local_data_path):
         """
         Args:
             base_dir: Folder where models and the registry.json will be saved.
         """
-        self.base_dir = config.EXPERIMENTS_DIR
-        self.registry_path = config.EXPERIMENTS_DIR / "registry.json" #os.path.join(base_dir, "registry.json") # /experiments/registry.json
-        self.models_dir = config.MODELS_DIR #os.path.join(base_dir, "models") # /experiments/models
+        self.base_dir = local_data_path + config.EXPERIMENTS_DIR
+        self.registry_path = local_data_path + config.EXPERIMENTS_DIR / "registry.json" #os.path.join(base_dir, "registry.json") # /experiments/registry.json
+        self.models_dir = local_data_path + config.MODELS_DIR #os.path.join(base_dir, "models") # /experiments/models
         
         # Create directories if they don't exist
         self.base_dir.mkdir(parents=True, exist_ok=True)
         self.models_dir.mkdir(parents=True, exist_ok=True)
         #os.makedirs(self.models_dir, exist_ok=True)
-        
+
+
         # Load existing registry or create new
+        # Check if registry.json exists in current directory (that is, it was pulled from github) and move it
+        current_dir_registry = "registry.json"
+        if current_dir_registry.exists() and current_dir_registry != self.registry_path:
+            import shutil
+            print(f"📦 Moving registry.json from {current_dir_registry} to {self.registry_path}")
+            shutil.move(str(current_dir_registry), str(self.registry_path))
+        
         if self.registry_path.exists():
             try:
                 with open(self.registry_path, 'r') as f:
@@ -29,6 +37,8 @@ class ModelRegistry:
                 self.registry = {}
         else:
             self.registry = {}
+
+
 
     def generate_id(self, prefix="exp"):
         """Generates a unique ID based on timestamp."""

@@ -85,7 +85,7 @@ def get_optimizer_and_scaler(optimizer_name, model, learning_rate, l2_lambda, de
     scaler = torch.amp.GradScaler(enabled=(device_obj.type == 'cuda'))
     return optimizer, scaler
 
-def start_training(model_name="CNN", model_params=None, training_params=None, device=None, train_loader=None, val_loader=None, data_input_shape=None, debug_mode=True, class_weights_loss_function=None):
+def start_training(model_name="CNN", model_params=None, training_params=None, device=None, train_loader=None, val_loader=None, data_input_shape=None, debug_mode=True, class_weights_loss_function=None, local_data_path=None):
     """
     Args:
         model_name (str): "CNN" or "EfficientNet"
@@ -101,7 +101,7 @@ def start_training(model_name="CNN", model_params=None, training_params=None, de
     #     config.EXPERIMENTS_DIR.mkdir(parents=True, exist_ok=True)
     # --- 0. INIT REGISTRY & ID (MOVED TO TOP) ---
     # We create the ID now so Comet and Registry share it
-    reg_manager = registry_module.ModelRegistry()
+    reg_manager = registry_module.ModelRegistry(local_data_path)
     run_id = reg_manager.generate_id(prefix=model_name)
 
     best_model, best_performance = initialize_training()
@@ -253,7 +253,8 @@ def start_training(model_name="CNN", model_params=None, training_params=None, de
         experiment_name=run_id, 
         patience=current_train_cfg['patience'],
         comet_experiment=comet_experiment,
-        debug_mode=debug_mode
+        debug_mode=debug_mode,
+        local_data_path=local_data_path
         )
 
     # Update best model if current performance is superior
