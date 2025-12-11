@@ -85,7 +85,7 @@ def get_optimizer_and_scaler(optimizer_name, model, learning_rate, l2_lambda, de
     scaler = torch.amp.GradScaler(enabled=(device_obj.type == 'cuda'))
     return optimizer, scaler
 
-def start_training(model_name="CNN", model_params=None, training_params=None, device=None, train_loader=None, val_loader=None, data_input_shape=None, debug_mode=True):
+def start_training(model_name="CNN", model_params=None, training_params=None, device=None, train_loader=None, val_loader=None, data_input_shape=None, debug_mode=True, class_weights_loss_function=None):
     """
     Args:
         model_name (str): "CNN" or "EfficientNet"

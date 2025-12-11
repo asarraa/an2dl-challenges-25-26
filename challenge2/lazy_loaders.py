@@ -7,7 +7,7 @@ from PIL import Image
 from pathlib import Path
 from torchvision.transforms import v2 as transforms
 from sklearn.model_selection import train_test_split
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, WeightedRandomSampler
 import config
 
 # Global random seed for reproducibility
@@ -135,7 +135,7 @@ class TestImageDataset(torch.utils.data.Dataset):
 
         return image_tensor, img_name
 
-def make_loader(ds, batch_size, shuffle, drop_last):
+def make_loader(ds, batch_size, drop_last, shuffle=False, sampler=None):
     """
     Create a PyTorch DataLoader with optimized settings.
     """
@@ -143,19 +143,31 @@ def make_loader(ds, batch_size, shuffle, drop_last):
     cpu_cores = os.cpu_count() or 2
     # Choose number of workers between 2 and 8 based on CPU count
     num_workers = max(2, min(8, cpu_cores))  # Increased workers for disk I/O
-    
+    if sampler is not None:
+        return DataLoader(
+            ds,                         # Dataset object
+            batch_size=batch_size,      # Number of samples per batch
+            sampler=sampler,            # Shuffle (True for training)
+            drop_last=drop_last,        # Drop final batch if smaller size
+            num_workers=num_workers,    # Parallel workers for loading data
+            pin_memory=True,            # Speeds transfer to GPU
+            pin_memory_device="cuda" if torch.cuda.is_available() else "",  # Specify device for pinning
+            prefetch_factor=4,          # Preload samples into worker queue
+            persistent_workers=True,    # Keep workers alive between epochs
+        )
+    else:
     # Create DataLoader optimized for GPU training and disk I/O heavy datasets
-    return DataLoader(
-        ds,                         # Dataset object
-        batch_size=batch_size,      # Number of samples per batch
-        shuffle=shuffle,            # Shuffle (True for training)
-        drop_last=drop_last,        # Drop final batch if smaller size
-        num_workers=num_workers,    # Parallel workers for loading data
-        pin_memory=True,            # Speeds transfer to GPU
-        pin_memory_device="cuda" if torch.cuda.is_available() else "",  # Specify device for pinning
-        prefetch_factor=4,          # Preload samples into worker queue
-        persistent_workers=True,    # Keep workers alive between epochs
-    )
+        return DataLoader(
+            ds,                         # Dataset object
+            batch_size=batch_size,      # Number of samples per batch
+            shuffle=shuffle,            # Shuffle (True for training)
+            drop_last=drop_last,        # Drop final batch if smaller size
+            num_workers=num_workers,    # Parallel workers for loading data
+            pin_memory=True,            # Speeds transfer to GPU
+            pin_memory_device="cuda" if torch.cuda.is_available() else "",  # Specify device for pinning
+            prefetch_factor=4,          # Preload samples into worker queue
+            persistent_workers=True,    # Keep workers alive between epochs
+        )
 
 def _resolve_paths(base_path, add_mask_channel=False, is_test=False):
     """
@@ -206,6 +218,24 @@ def get_loaders(augmentation=None, batch_size=LOADER_PARAMS["batch_size"], base_
     sample_img = cv2.imread(str(sample_path))
     if sample_img is None:
         raise FileNotFoundError(f"Could not load sample image {sample_path}")
+     
+    # Computation of class weights for loss function (because of unbalanced training dataset)
+    # Count one sample per original image
+    unique_samples = df.drop_duplicates(subset=['original_sample'])
+    
+    # Compute the counts of each class
+    counts = np.bincount(unique_samples['label'])
+
+    # Calculate weights using a logaritmich scale
+    # log1p è log(1+x), che gestisce conteggi molto piccoli in modo stabile
+    class_weights = 1.0 / np.log1p(counts)
+
+    # Normalize weights
+    class_weights = class_weights / np.sum(class_weights) * len(counts)
+    
+    sample_weight = train_df['weight'].to_numpy()
+    
+    sampler = torch.WeightedRandomSampler(sample_weight, num_samples=len(sample_weight))
     
     # Determine shape depending on whether masks are appended
     if add_mask_channel:
@@ -236,8 +266,8 @@ def get_loaders(augmentation=None, batch_size=LOADER_PARAMS["batch_size"], base_
     val_ds = LazyImageDataset(val_df, images_dir, masks_dir=masks_dir, add_mask_channel=add_mask_channel, transform=None)
     
     # Create DataLoaders for training and validation
-    train_loader = make_loader(train_ds, batch_size=batch_size, shuffle=True, drop_last=False)
-    val_loader = make_loader(val_ds, batch_size=batch_size, shuffle=False, drop_last=False)
+    train_loader = make_loader(train_ds, batch_size=batch_size, sampler=sampler, drop_last=False)
+    val_loader = make_loader(val_ds, batch_size=batch_size, shuffle=True, drop_last=False)
     
     # Print dataset statistics
     print(f"Train samples: {len(train_ds)}, Val samples: {len(val_ds)}")
