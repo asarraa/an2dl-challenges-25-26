@@ -14,7 +14,7 @@ def make_inference(loader, device, input_shape, model_path, model_name, batch_si
     
     inv_label_map = {v: k for k, v in config.LABEL_MAP.items()}
 
-    _, _, csv_path = _resolve_paths(base_path="./data/preprocessed/preprocess_v1_weighted", add_mask_channel=False, is_test=True)
+    _, _, csv_path = _resolve_paths(add_mask_channel=False, is_test=True)
 
     # Read CSV metadata into memory (very small footprint)
     df_test = pd.read_csv(csv_path)

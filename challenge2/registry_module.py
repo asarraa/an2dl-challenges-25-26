@@ -66,7 +66,7 @@ class ModelRegistry:
         # 4. Update Registry JSON
         entry = {
             "timestamp": datetime.datetime.now().isoformat(),
-            "model_path": model_path,
+            "model_path": str(model_path),
             "model_class": model.__class__.__name__,  # Store class name (e.g., "CNN")
             "training_params": train_cfg,
             "model_architecture": model_cfg,
