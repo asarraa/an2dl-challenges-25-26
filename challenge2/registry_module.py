@@ -3,6 +3,8 @@ import json
 import datetime
 import torch
 import config
+from pathlib import Path
+
 
 class ModelRegistry:
     def __init__(self, local_data_path):
@@ -10,6 +12,7 @@ class ModelRegistry:
         Args:
             base_dir: Folder where models and the registry.json will be saved.
         """
+        local_data_path=Path(local_data_path)
         self.base_dir = local_data_path + config.EXPERIMENTS_DIR
         self.registry_path = local_data_path + config.EXPERIMENTS_DIR / "registry.json" #os.path.join(base_dir, "registry.json") # /experiments/registry.json
         self.models_dir = local_data_path + config.MODELS_DIR #os.path.join(base_dir, "models") # /experiments/models
