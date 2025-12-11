@@ -254,7 +254,7 @@ def get_test_loaders(add_mask_channel=False, batch_size=LOADER_PARAMS["batch_siz
     df = pd.read_csv(csv_path)
     
     # Create mapping: string labels → integer labels
-    df['label'] = df['label'].map(config.LABEL_MAP)
+    #df['label'] = df['label'].map(config.LABEL_MAP)
     
     # Load one sample image for determining input shape
     sample_path = images_dir / df.iloc[0]['sample_index']
@@ -282,7 +282,7 @@ def get_test_loaders(add_mask_channel=False, batch_size=LOADER_PARAMS["batch_siz
     )
     
     # Create DataLoaders for training and validation
-    test_loader = make_loader(ds, batch_size=batch_size, shuffle=True, drop_last=False)
+    test_loader = make_loader(ds, batch_size=batch_size, shuffle=False, drop_last=False)
     
     print(f"Test samples: {len(ds)}, Input shape: {input_shape}")
     
