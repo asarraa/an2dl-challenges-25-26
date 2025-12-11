@@ -108,6 +108,11 @@ class TestImageDataset(torch.utils.data.Dataset):
         self.images_dir = Path(images_dir)
         self.masks_dir = Path(masks_dir) if masks_dir else None
         self.add_mask_channel = add_mask_channel
+        # Base transform always used (convert image to tensor)
+        self.to_tensor = transforms.Compose([
+            transforms.ToImage(),                                 # Convert PIL/numpy to Torch tensor
+            transforms.ToDtype(torch.float32, scale=True)         # Convert dtype and scale to [0,1]
+        ])
 
     def __len__(self):
         return len(self.filenames)

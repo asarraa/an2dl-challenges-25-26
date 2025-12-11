@@ -1,7 +1,7 @@
 import config
 import torch
 import pandas as pd
-from lazy_loaders import _resolve_paths
+from lazy_loaders import _resolve_paths, get_test_loaders
 import os
 from pathlib import Path
 from typing import Dict, Optional, Tuple
@@ -14,8 +14,7 @@ def make_inference(loader, device, input_shape, model_path, model_name, batch_si
     
     inv_label_map = {v: k for k, v in config.LABEL_MAP.items()}
 
-
-    _, _, csv_path = _resolve_paths(base_path=None, add_mask_channel=False, is_test=True)
+    _, _, csv_path = _resolve_paths(base_path="./data/preprocessed/preprocess_v1_weighted", add_mask_channel=False, is_test=True)
 
     # Read CSV metadata into memory (very small footprint)
     df_test = pd.read_csv(csv_path)
@@ -152,15 +151,22 @@ def predict(model: torch.nn.Module, loader: DataLoader, device: torch.device) ->
 
 
 def majority_vote(tile_df: pd.DataFrame, meta_df: pd.DataFrame, inv_label_map: Dict[int, str]) -> pd.DataFrame:
-    if "weight" not in tile_df.columns:
-        tile_df = tile_df.copy()
-        tile_df["weight"] = 1.0
+    df = tile_df.copy()
+    default_weights = df["weight"] if "weight" in df.columns else 1.0
+
+    # Prefer patch weights coming from the metadata CSV (precomputed during preprocessing)
+    if "weight" in meta_df.columns:
+        weight_map = meta_df.set_index("sample_index")["weight"]
+        df["weight"] = df["sample_index"].map(weight_map).fillna(default_weights)
+    elif "weight" not in df.columns:
+        df["weight"] = 1.0
 
     if "original_sample" in meta_df.columns:
-        merged = tile_df.merge(meta_df[["sample_index", "original_sample"]], on="sample_index", how="left")
-        groups = merged.groupby("original_sample")
+        original_map = meta_df.set_index("sample_index")["original_sample"]
+        df["original_sample"] = df["sample_index"].map(original_map).fillna(df["sample_index"])
+        groups = df.groupby("original_sample")
     else:
-        groups = tile_df.groupby("sample_index")
+        groups = df.groupby("sample_index")
 
     rows = []
     slide_map = {}
@@ -185,7 +191,10 @@ def build_debug_table(tile_df: pd.DataFrame, meta_df: pd.DataFrame, inv_label_ma
         merged["original_sample"] = merged["sample_index"]
 
     merged["pred_label"] = merged["pred_idx"].map(inv_label_map)
-    if "weight" not in merged.columns:
+    if "weight" in meta_df.columns:
+        weight_map = meta_df.set_index("sample_index")["weight"]
+        merged["weight"] = merged["sample_index"].map(weight_map).fillna(merged["weight"] if "weight" in merged.columns else 1.0)
+    elif "weight" not in merged.columns:
         merged["weight"] = 1.0
     if "black_ratio" not in merged.columns:
         merged["black_ratio"] = None
@@ -227,3 +236,21 @@ def infer_model_from_state_dict(state_dict: dict) -> Optional[str]:
     if any("units.0" in k or "MBConvBlock" in k for k in keys):
         return "EfficientNet"
     return None
+
+# i want to try if it works now
+if __name__ == "__main__":
+    
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    test_loader, obs_input_shape = get_test_loaders(batch_size=128, base_path="./data/preprocessed/preprocess_v1_weighted")
+    
+    # Opzionale: puoi usare obs_input_shape invece di hardcodare (3, 224, 224)
+    print(f"Detected input shape: {obs_input_shape}")
+    make_inference(
+        loader=test_loader,
+        device=device,
+        input_shape=obs_input_shape,
+        model_path=Path("./HistologyResNet_20251210_101039.pt"),
+        model_name="HistologyResNet",
+        batch_size=128,
+        output="submission.csv"
+    )

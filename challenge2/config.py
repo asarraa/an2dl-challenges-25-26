@@ -61,7 +61,7 @@ RESNET_DEFAULTS = {
 
 
 # 5. DIRECTORIES
-BASE_FOLDER = Path("../../drive/MyDrive/AN2DL_Challenge2-TheBigBatchTheory") # path for colab
+BASE_FOLDER = Path("./") # path for colab
 BASE_DATA = BASE_FOLDER / "data"
 BASE_DATASET = BASE_DATA / "dataset"
 BASE_PREPROCESSED = BASE_DATA / "preprocessed"
