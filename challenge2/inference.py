@@ -40,7 +40,7 @@ def make_inference(loader, device, input_shape, model_path, model_name, experime
 
     submission, slide_map = majority_vote(tile_preds, df_test, inv_label_map)
 
-    output = Path(base_path+"/"+experiment_id+"_submission")
+    output = Path(base_path+"/"+experiment_id+"_submission.csv")
     output.parent.mkdir(parents=True, exist_ok=True)
     submission.to_csv(output, index=False)
     print(f"[INFO] Saved submission to {output}")
