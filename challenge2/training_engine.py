@@ -1,6 +1,8 @@
 import torch
 import numpy as np
 from sklearn.metrics import f1_score
+import os
+
 '''
 try:
     from launch_training import DEBUG_MODE
@@ -252,10 +254,11 @@ def fit(model, train_loader, val_loader, epochs, criterion, optimizer, scaler, d
             current_metric = training_history[evaluation_metric][-1]
             is_improvement = (current_metric > best_metric) if mode == 'max' else (current_metric < best_metric)
 
+            os.makedirs("models", exist_ok=True)
+
             if is_improvement:
                 best_metric = current_metric
-                best_epoch = epoch
-                #torch.save(model.state_dict(), "models/"+experiment_name+'_model.pt')
+                torch.save(model.state_dict(), "models/"+experiment_name+'_model.pt')
                 patience_counter = 0
             else:
                 patience_counter += 1
