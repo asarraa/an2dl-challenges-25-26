@@ -10,7 +10,7 @@ from torch.utils.data import DataLoader
 
 
 
-def make_inference(loader, device, input_shape, model_path, model_name, base_path, output="submission.csv"):
+def make_inference(loader, device, input_shape, model_path, model_name, experiment_id, base_path):
     
     inv_label_map = {v: k for k, v in config.LABEL_MAP.items()}
 
@@ -39,7 +39,8 @@ def make_inference(loader, device, input_shape, model_path, model_name, base_pat
     tile_preds = predict(model, loader, device)
 
     submission, slide_map = majority_vote(tile_preds, df_test, inv_label_map)
-    output = Path(output)
+
+    output = Path(base_path+"/"+experiment_id+"_submission")
     output.parent.mkdir(parents=True, exist_ok=True)
     submission.to_csv(output, index=False)
     print(f"[INFO] Saved submission to {output}")
