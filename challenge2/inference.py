@@ -39,8 +39,8 @@ def make_inference(loader, device, input_shape, model_path, model_name, base_pat
     tile_preds = predict(model, loader, device)
 
     submission, slide_map = majority_vote(tile_preds, df_test, inv_label_map)
-    output.parent.mkdir(parents=True, exist_ok=True)
     output = Path(output)
+    output.parent.mkdir(parents=True, exist_ok=True)
     submission.to_csv(output, index=False)
     print(f"[INFO] Saved submission to {output}")
 
