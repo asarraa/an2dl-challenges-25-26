@@ -227,6 +227,11 @@ def process_single_slide(img_path, mask_path, label, output_img_dir, is_test_set
                 # Mirrors the edge pixels. This maintains texture continuity and prevents
                 # "hard edge" artifacts that zero-padding creates (CNNs hate hard edges).
                 img_crop = cv2.copyMakeBorder(img_crop, 0, pad_h, 0, pad_w, cv2.BORDER_REFLECT_101)
+
+            # Compute black ratio (share of dark pixels) to weight patches with more tissue
+            gray_crop = cv2.cvtColor(img_crop, cv2.COLOR_BGR2GRAY)
+            black_ratio = (gray_crop < 15).mean()
+            weight = max(0.05, 1.0 - black_ratio)
                 
             tile_name = f"{base_name}_y{y}_x{x}.png"
                 
@@ -237,6 +242,8 @@ def process_single_slide(img_path, mask_path, label, output_img_dir, is_test_set
             row = {
                 'sample_index': tile_name,      # name of the tile: image_name_x_y coorindates
                 'original_sample': img_path.name, # Name of the full image
+                'black_ratio': black_ratio,
+                'weight': weight,
             }
             
             # Add label only if we are in Training mode
@@ -343,7 +350,7 @@ def preprocess(do_test=True, preprocess_name=None):
         if train_rows:
             train_df = pd.DataFrame(train_rows)
             # Reorder columns for clarity
-            cols = ['sample_index', 'original_sample', 'label']
+            cols = ['sample_index', 'original_sample', 'label', 'black_ratio', 'weight']
             train_df = train_df[cols]
             train_df.to_csv(single_preprocessing_dir / "train/train_patches.csv", index=False)
             print(f"✅ Training Tiles Saved: {len(train_rows)}")
@@ -400,7 +407,7 @@ def process_test(preprocess_name=None):
         if test_rows:
             test_df = pd.DataFrame(test_rows)
             # Reorder columns (No Label column here)
-            cols = ['sample_index', 'original_sample']
+            cols = ['sample_index', 'original_sample', 'black_ratio', 'weight']
             test_df = test_df[cols]
             test_df.to_csv(single_preprocessing_dir / "test/test_patches.csv", index=False)
             print(f"✅ Test Tiles Saved: {len(test_rows)}")
