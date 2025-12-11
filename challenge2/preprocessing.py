@@ -231,7 +231,7 @@ def process_single_slide(img_path, mask_path, label, output_img_dir, is_test_set
             # Compute black ratio (share of dark pixels) to weight patches with more tissue
             gray_crop = cv2.cvtColor(img_crop, cv2.COLOR_BGR2GRAY)
             black_ratio = (gray_crop < 15).mean()
-            weight = max(0.05, 1.0 - black_ratio)
+            weight = max(0.005, 1.0 - black_ratio)**2  # Quadratic scaling to emphasize tissue-rich patches
                 
             tile_name = f"{base_name}_y{y}_x{x}.png"
                 
@@ -417,4 +417,4 @@ def process_test(preprocess_name=None):
         print("⚠️ test_data folder not found.")
         
 if __name__ == "__main__":
-    preprocess(do_test=True, preprocess_name="preprocess_v1")
+    preprocess(do_test=True, preprocess_name="preprocess_v1_weighted")
