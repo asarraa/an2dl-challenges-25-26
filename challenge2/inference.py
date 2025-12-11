@@ -1,284 +1,228 @@
-# Set seed for reproducibility
-SEED = 42
-
-import numpy as np
-import pandas as pd
+import config
 import torch
-torch.manual_seed(SEED)
-from torch import nn
-import matplotlib.pyplot as plt
-import matplotlib.gridspec as gridspec
-from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, confusion_matrix
-import seaborn as sns
+import pandas as pd
+from lazy_loaders import _resolve_paths
+import os
+from pathlib import Path
+from typing import Dict, Optional, Tuple
+import models
 
 
-# Configure plot display settings
-sns.set(font_scale=1.4)
-sns.set_style('white')
-plt.rc('font', size=14)
-#%matplotlib inline
+
+def make_inference(loader, device, input_shape, model_path, model_name, batch_size, output="submission.csv"):
+    
+    inv_label_map = {v: k for k, v in config.LABEL_MAP.items()}
 
 
-# @title Activation visualisation
-def get_activation(name):
-    """Creates a hook function to capture and store layer outputs."""
-    def hook(model, input, output):
-        activations[name] = output.detach()
-    return hook
+    _, _, csv_path = _resolve_paths(base_path=None, add_mask_channel=False, is_test=True)
+
+    # Read CSV metadata into memory (very small footprint)
+    df_test = pd.read_csv(csv_path)
 
 
-def find_last_conv_layer(model):
-    """
-    Identifies the final Conv2D layer in the model architecture.
-    """
-    last_conv_name = None
-    for name, module in model.named_modules():
-        if isinstance(module, nn.Conv2d):
-            last_conv_name = name
-
-    if last_conv_name is None:
-        raise ValueError("No Conv2D layer found in the model.")
-    return last_conv_name
+    # Preload checkpoint metadata to adapt channels
+    ckpt, state_dict = load_checkpoint(model_path, map_location="cpu")
+    ckpt_channels = infer_conv1_in_channels(state_dict)
 
 
-def visualize(model, X, y, unique_labels, num_images=50, display_activations=True, display_all_conv_layers=False, device_obj = None):
-    """
-    Visualises model predictions and internal activations for a random test image.
-    Uses PyTorch hooks to extract intermediate layer outputs.
+    model = load_model(
+        model_path,
+        input_shape=input_shape,
+        num_classes=len(config.LABEL_MAP),
+        model_name=model_name,
+        state_dict=state_dict,
+        ckpt=ckpt,
+        ckpt_channels=ckpt_channels,
+    )
+    model.to(device)
 
-    Args:
-        display_all_conv_layers: If True, shows all conv layers. If False, shows only last conv of each block.
-    """
+    print(f"[INFO] Inference on {len(ds)} patches | batch_size={batch_size} | device={device}")
+    tile_preds = predict(model, loader, device)
 
-    # --- 1. Select Image and Prepare Tensor ---
+    submission, slide_map = majority_vote(tile_preds, df_test, inv_label_map)
+    output.parent.mkdir(parents=True, exist_ok=True)
+    submission.to_csv(output, index=False)
+    print(f"[INFO] Saved submission to {output}")
 
-    # Randomly select an image from the dataset
-    image_idx = np.random.randint(0, num_images)
-    img_np = X[image_idx]
-    label_np = y[image_idx]
 
-    # Convert NumPy array to PyTorch tensor with correct dimensions
-    # Transform from (H, W, C) to (N, C, H, W) format
-    img_tensor = torch.from_numpy(img_np)
-    img_tensor = img_tensor.permute(2, 0, 1)
-    img_tensor = img_tensor.unsqueeze(0).to(device_obj)
 
-    # --- 2. Register Hooks and Make Prediction ---
 
-    # Clear previous activations
-    activations.clear()
+def load_model(
+    model_path: Path,
+    input_shape: Tuple[int, int, int],
+    num_classes: int,
+    model_name: Optional[str],
+    state_dict: Optional[dict] = None,
+    ckpt: Optional[dict] = None,
+    ckpt_channels: Optional[int] = None,
+) -> torch.nn.Module:
+    ckpt, loaded_state_dict = load_checkpoint(model_path) if state_dict is None else (ckpt, state_dict)
 
-    # Attach forward hooks to convolutional layers
-    hooks = []
-    conv_names = []
+    cfg = {}
+    if isinstance(ckpt, dict):
+        if isinstance(ckpt.get("config"), dict):
+            cfg.update(ckpt["config"])
+        if isinstance(ckpt.get("model_architecture"), dict):
+            cfg.update(ckpt["model_architecture"])
 
-    # Iterate through all blocks in the features Sequential
-    for block_idx, block in enumerate(model.features):
-        # Find all Conv2d layers in this block
-        conv_layers_in_block = []
-        for layer_idx, layer in enumerate(block.block):
-            if isinstance(layer, nn.Conv2d):
-                conv_layers_in_block.append((layer_idx, layer))
+    name = pick_model_name(model_name, ckpt or {}, loaded_state_dict)
+    c, h, w = input_shape
 
-        # Register hooks based on display_all_conv_layers flag
-        if display_all_conv_layers:
-            # Register hook for every Conv2d layer
-            for layer_idx, conv_layer in conv_layers_in_block:
-                hook_name = f'block{block_idx}_conv{layer_idx}'
-                conv_names.append(hook_name)
-                hooks.append(conv_layer.register_forward_hook(get_activation(hook_name)))
+    if name == "CNN":
+        model_cfg = config.CNN_DEFAULTS.copy()
+        model_cfg.update({k: v for k, v in cfg.items() if k in model_cfg})
+        model_cfg["input_shape"] = (c, h, w)
+        model_cfg["num_classes"] = num_classes
+        model = models.CNN(**model_cfg)
+    elif name == "EfficientNet":
+        model_cfg = config.EFFICIENTNET_DEFAULTS.copy()
+        model_cfg.update({k: v for k, v in cfg.items() if k in model_cfg})
+        model_cfg["input_shape"] = (c, h, w)
+        model_cfg["num_classes"] = num_classes
+        model = models.EfficientNetModel(**model_cfg)
+    elif name == "HistologyResNet":
+        backbone = cfg.get("backbone", "resnet18")
+        use_pretrained = cfg.get("use_pretrained", False)
+        if ckpt_channels == 4 or c == 4:
+            print("[ERROR] Tried using HistologyResNet witih 4 input channels, which is obsolete")
+            #model = LegacyHistologyResNet(num_classes=num_classes, use_pretrained=use_pretrained, backbone=backbone)
         else:
-            # Register hook only for the last Conv2d layer in this block
-            if conv_layers_in_block:
-                layer_idx, conv_layer = conv_layers_in_block[-1]
-                hook_name = f'block{block_idx}_conv{layer_idx}'
-                conv_names.append(hook_name)
-                hooks.append(conv_layer.register_forward_hook(get_activation(hook_name)))
+            model_cfg = config.RESNET_DEFAULTS.copy()
+            model_cfg.update({k: v for k, v in cfg.items() if k in model_cfg})
+            model_cfg["num_classes"] = num_classes
+            model_cfg["input_channels"] = c
+            model = models.HistologyResNet(**model_cfg)
+    else:
+        raise ValueError(f"Unsupported model '{name}'. Use --model-name to pick a valid one.")
 
-    # Generate prediction with gradient tracking disabled
+    model.load_state_dict(loaded_state_dict)
+    return model
+
+
+def load_checkpoint(path: Path, map_location: str = "cpu"):
+    ckpt = torch.load(path, map_location=map_location)
+    state_dict = ckpt.get("model_state_dict", ckpt if isinstance(ckpt, dict) else {})
+    state_dict = {k.replace("module.", ""): v for k, v in state_dict.items()}
+    return ckpt, state_dict
+
+
+def infer_conv1_in_channels(state_dict: dict) -> Optional[int]:
+    """Infer expected input channels from checkpoint weights."""
+    for key, value in state_dict.items():
+        if key.endswith("conv1.weight") and hasattr(value, "shape"):
+            return value.shape[1]
+    return None
+
+
+
+
+# ------------------------------
+# Inference + aggregation
+# ------------------------------
+def predict(model: torch.nn.Module, loader: DataLoader, device: torch.device) -> pd.DataFrame:
     model.eval()
+    names, preds, weights, black_ratios = [], [], [], []
     with torch.no_grad():
-        logits = model(img_tensor)
-        probabilities = torch.softmax(logits, dim=1)
-
-    # Remove hooks after forward pass
-    for hook in hooks:
-        hook.remove()
-
-    # Extract predicted class and confidence
-    predictions = probabilities.cpu().numpy()
-    class_int = np.argmax(predictions[0])
-    class_str = unique_labels[class_int]
-
-    # Extract true class (handle both one-hot encoded and integer labels)
-    if label_np.ndim > 0 and len(label_np) > 1:
-        # One-hot encoded
-        true_class_int = np.argmax(label_np)
-    else:
-        # Already an integer index
-        true_class_int = int(label_np)
-    true_class_str = unique_labels[true_class_int]
-
-    # --- 3. Plot Image and Prediction Bar ---
-
-    # Create figure with custom layout
-    fig = plt.figure(constrained_layout=True, figsize=(16, 4))
-    gs = gridspec.GridSpec(1, 2, figure=fig, width_ratios=[1.5, 1.5], wspace=0)
-
-    # Display original image with true label
-    ax1 = fig.add_subplot(gs[0])
-    ax1.set_title(f"True class: {true_class_str}", loc='left')
-    if img_np.shape[-1] == 1:
-        ax1.imshow(np.squeeze(img_np), cmap='bone', vmin=0., vmax=1.)
-    else:
-        ax1.imshow(np.squeeze(img_np), vmin=0., vmax=1.)
-    ax1.axis('off')
-
-    # Display class probability distribution
-    ax2 = fig.add_subplot(gs[1])
-    ax2.barh(unique_labels, np.squeeze(predictions, axis=0), color=plt.get_cmap('tab10').colors)
-    ax2.set_title(f"Predicted class: {class_str} (Confidence: {max(np.squeeze(predictions[0])):.2f})", loc='left')
-    ax2.grid(alpha=0.3)
-    ax2.set_xlim(0.0, 1.0)
-    plt.show()
-
-    # --- 4. Plot Activations ---
-
-    if display_activations:
-        # Visualise activations for each registered layer
-        for conv_name in conv_names:
-            # Retrieve stored activations from hooks
-            layer_activations = activations[conv_name]
-
-            # Get number of channels
-            num_channels = layer_activations.shape[1]
-
-            # Display up to 16 feature maps per layer
-            num_display = min(16, num_channels)
-
-            # Calculate grid layout
-            if num_display <= 8:
-                rows, cols = 1, num_display
-                figsize = (18, 3)
+        for batch in loader:
+            if len(batch) == 3:
+                imgs, batch_names, batch_black = batch
             else:
-                rows, cols = 2, 8
-                figsize = (18, 5)
+                imgs, batch_names = batch
+                batch_black = torch.zeros(len(batch_names))
 
-            # Create subplot grid
-            fig, axes = plt.subplots(rows, cols, figsize=figsize)
+            imgs = imgs.to(device)
+            logits = model(imgs)
+            batch_preds = logits.argmax(dim=1).cpu().tolist()
 
-            # Flatten axes array for easier indexing
-            if num_display > 1:
-                axes = axes.flatten() if rows > 1 or cols > 1 else [axes]
-            else:
-                axes = [axes]
+            names.extend(batch_names)
+            preds.extend(batch_preds)
+            black_list = batch_black.tolist()
+            black_ratios.extend(black_list)
+            weights.extend([max(0.05, 1.0 - b) for b in black_list])
 
-            # Plot each activation map
-            for i in range(num_display):
-                ax = axes[i]
-                activation_map = layer_activations[0, i].cpu().numpy()
-                ax.imshow(activation_map, cmap='bone', vmin=np.min(activation_map), vmax=np.max(activation_map))
-                ax.axis('off')
-                if i == 0:
-                    ax.set_title(f'{conv_name} activations', loc='left')
-
-            # Hide unused subplots
-            for i in range(num_display, len(axes)):
-                axes[i].axis('off')
-
-            plt.tight_layout()
-            plt.show()
+    return pd.DataFrame(
+        {
+            "sample_index": names,
+            "pred_idx": preds,
+            "black_ratio": black_ratios,
+            "weight": weights,
+        }
+    )
 
 
-def make_inference(best_model, test_loader, device_obj):
+def majority_vote(tile_df: pd.DataFrame, meta_df: pd.DataFrame, inv_label_map: Dict[int, str]) -> pd.DataFrame:
+    if "weight" not in tile_df.columns:
+        tile_df = tile_df.copy()
+        tile_df["weight"] = 1.0
 
-    # Dictionary to store layer activations via forward hooks
-    activations = {}
+    if "original_sample" in meta_df.columns:
+        merged = tile_df.merge(meta_df[["sample_index", "original_sample"]], on="sample_index", how="left")
+        groups = merged.groupby("original_sample")
+    else:
+        groups = tile_df.groupby("sample_index")
 
-    # Visualise model predictions and internal representations
-    # Set display_all_conv_layers=True to show all conv layers, False for only last conv of each block
-    #visualize(best_model, X_test, y_test, unique_labels, display_activations=True, display_all_conv_layers=False, device_obj)
-
-    df_test = pd.read_csv('test_patches.csv') #this csv has the following columns ['sample_index', 'original_sample', 'tumor_coverage']
-
-
-    # Collect predictions and ground truth labels
-    test_preds = []
-    with torch.no_grad():  # Disable gradient computation for inference
-        for xb in test_loader:
-            xb = xb[0].to(device_obj)
-
-            # Forward pass: get model predictions
-            logits = best_model(xb)
-            preds = logits.argmax(dim=1).cpu().numpy()
-
-            # Store batch results
-            test_preds.append(preds)
-
-    # Combine all batches into single arrays
-    test_preds = np.concatenate(test_preds)
+    rows = []
+    slide_map = {}
+    for slide, group in groups:
+        scores = group.groupby("pred_idx")["weight"].sum()
+        best_idx = scores.idxmax()
+        label_str = inv_label_map[int(best_idx)]
+        slide_map[slide] = (int(best_idx), label_str)
+        rows.append({"sample_index": slide, "label": label_str})
+    return pd.DataFrame(rows).sort_values("sample_index"), slide_map
 
 
-    
-    from collections import Counter
+def build_debug_table(tile_df: pd.DataFrame, meta_df: pd.DataFrame, inv_label_map: Dict[int, str], slide_map: Dict[str, tuple]) -> pd.DataFrame:
+    """
+    Return a dataframe with per-patch prediction and the final slide-level majority vote.
+    Columns: sample_index (patch), original_sample, pred_idx, pred_label, weight, black_ratio, final_pred_idx, final_pred_label
+    """
+    if "original_sample" in meta_df.columns:
+        merged = tile_df.merge(meta_df[["sample_index", "original_sample"]], on="sample_index", how="left")
+    else:
+        merged = tile_df.copy()
+        merged["original_sample"] = merged["sample_index"]
 
-    final_preds = {}
-    
-
-    for image_id in np.unique(df_test['original_sample']):
-        
-    mask = user_ids == uid
-    user_preds = split_test_preds[mask]
-    majority_class = Counter(user_preds).most_common(1)[0][0]
-    final_preds[uid] = majority_class
-
-
-    # ✅ Dizionario che mappa le classi numeriche a quelle testuali
-    label_map = {0: "Luminal A", 1: "Luminal B", 2: "HER2(+)", 3:"Triple Negative" }
-
-    # ✅ Converte le predizioni numeriche nel formato testuale
-    submission_data = []
-    for uid, pred_num in test_preds.items():
-        label_str = label_map[pred_num]
-        submission_data.append((f"{int(uid):04d}", label_str))  # formatta l’ID come '000', '001', ecc.
-
-    # ✅ Crea il DataFrame per la submission
-    submission = pd.DataFrame(submission_data, columns=["sample_index", "label"])
-
-    # ✅ Salva il CSV
-    submission.to_csv("submission.csv", index=False)
-    print("📁 File 'submission.csv' creato con successo!")
-
-    # ✅ (Facoltativo) scarica il file in locale (solo in Colab)
-    from google.colab import files
-    files.download("submission.csv")
+    merged["pred_label"] = merged["pred_idx"].map(inv_label_map)
+    if "weight" not in merged.columns:
+        merged["weight"] = 1.0
+    if "black_ratio" not in merged.columns:
+        merged["black_ratio"] = None
+    merged["final_pred_idx"] = merged["original_sample"].map(lambda s: slide_map[s][0])
+    merged["final_pred_label"] = merged["original_sample"].map(lambda s: slide_map[s][1])
+    return merged
 
 
-    # Calculate overall test accuracy
-    '''
-    test_acc = accuracy_score(test_targets, test_preds)
-    test_prec = precision_score(test_targets, test_preds, average='weighted')
-    test_rec = recall_score(test_targets, test_preds, average='weighted')
-    test_f1 = f1_score(test_targets, test_preds, average='weighted')
-    print(f"Accuracy over the test set: {test_acc:.4f}")
-    print(f"Precision over the test set: {test_prec:.4f}")
-    print(f"Recall over the test set: {test_rec:.4f}")
-    print(f"F1 score over the test set: {test_f1:.4f}")'''
 
-    # Generate confusion matrix for detailed error analysis
-    #cm = confusion_matrix(test_targets, test_preds)
+def pick_model_name(user_choice: Optional[str], ckpt: dict, state_dict: dict) -> str:
+    if user_choice:
+        return user_choice
+    for key in ("model_name",):
+        if key in ckpt:
+            return ckpt[key]
+    cfg = ckpt.get("config") or {}
+    if isinstance(cfg, dict) and "model_name" in cfg:
+        return cfg["model_name"]
 
-    # Create numeric labels for heatmap annotation
-    '''
-    labels = np.array([f"{num}" for num in cm.flatten()]).reshape(cm.shape)
+    inferred = infer_model_from_state_dict(state_dict)
+    if inferred:
+        print(f"[INFO] Detected architecture from checkpoint: {inferred}")
+        return inferred
 
-    # Visualise confusion matrix
-    plt.figure(figsize=(8, 7))
-    sns.heatmap(cm, annot=labels, fmt='',
-                cmap='Blues')
-    plt.xlabel('Predicted labels')
-    plt.ylabel('True labels')
-    plt.title('Confusion Matrix — Test Set')
-    plt.tight_layout()
-    plt.show()
-    '''
+    return config.MODEL_NAME
+
+
+
+# ------------------------------
+# Model helpers
+# ------------------------------
+def infer_model_from_state_dict(state_dict: dict) -> Optional[str]:
+    keys = list(state_dict.keys())
+    if any(k.startswith("model.layer1") or k.startswith("model.conv1") for k in keys):
+        return "HistologyResNet"
+    if any(k.startswith("features.") for k in keys):
+        return "CNN"
+    # Simple heuristic for EfficientNetModel keys
+    if any("units.0" in k or "MBConvBlock" in k for k in keys):
+        return "EfficientNet"
+    return None

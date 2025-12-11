@@ -278,6 +278,13 @@ def get_loaders(augmentation=None, batch_size=LOADER_PARAMS["batch_size"], base_
 
 
 def get_test_loaders(add_mask_channel=False, batch_size=LOADER_PARAMS["batch_size"], base_path=None):
+    '''
+    Semplicemente questa funzione prende il csv con 3 colonne, le cui prime due sono (sample_index, image_index), che
+    sono rispettivamente l'ID di un patch (img..._x..._y...) e l'ID dell'immagine da cui proviene, ma si limita a prendere
+    gli ID dei patch e a creare un loader. N.B. qui non serve prendere l'id delle immagini originali, quello verrà fatto
+    nella fase di inferenza, in cui le predizioni dei vari patch di una stessa immagine vengono aggregati per fare majority voting.
+    '''
+
     images_dir, masks_dir, csv_path = _resolve_paths(base_path, add_mask_channel, is_test=True)
 
     # Read CSV metadata into memory (very small footprint)
@@ -287,7 +294,7 @@ def get_test_loaders(add_mask_channel=False, batch_size=LOADER_PARAMS["batch_siz
     #df['label'] = df['label'].map(config.LABEL_MAP)
     
     # Load one sample image for determining input shape
-    sample_path = images_dir / df.iloc[0]['sample_index']
+    sample_path = images_dir / df.iloc[0]['sample_index'] #sample index è l'indice di un patch
     sample_img = cv2.imread(str(sample_path))
     if sample_img is None:
         raise FileNotFoundError(f"Could not load sample image {sample_path}")
