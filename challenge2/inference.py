@@ -10,11 +10,11 @@ from torch.utils.data import DataLoader
 
 
 
-def make_inference(loader, device, input_shape, model_path, model_name, batch_size, output="submission.csv"):
+def make_inference(loader, device, input_shape, model_path, model_name, base_path, output="submission.csv"):
     
     inv_label_map = {v: k for k, v in config.LABEL_MAP.items()}
 
-    _, _, csv_path = _resolve_paths(base_path=None, add_mask_channel=False, is_test=True)
+    _, _, csv_path = _resolve_paths(base_path=base_path, add_mask_channel=False, is_test=True)
 
     # Read CSV metadata into memory (very small footprint)
     df_test = pd.read_csv(csv_path)
