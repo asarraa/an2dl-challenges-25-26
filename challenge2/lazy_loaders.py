@@ -235,7 +235,7 @@ def get_loaders(augmentation=None, batch_size=LOADER_PARAMS["batch_size"], base_
     
     sample_weight = train_df['weight'].to_numpy()
     
-    sampler = torch.WeightedRandomSampler(sample_weight, num_samples=len(sample_weight))
+    sampler = WeightedRandomSampler(sample_weight, num_samples=len(sample_weight))
     
     # Determine shape depending on whether masks are appended
     if add_mask_channel:
