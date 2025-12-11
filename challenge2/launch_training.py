@@ -294,4 +294,4 @@ def start_training(model_name="CNN", model_params=None, training_params=None, de
     comet_experiment.log_other("local_experiment_id", exp_id)
     comet_experiment.end()
     
-    return model, training_history
+    return model, training_history, exp_id
