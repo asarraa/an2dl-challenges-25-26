@@ -79,3 +79,29 @@ LABEL_MAP = {
     "HER2(+)": 2,
     "Triple negative": 3
     }
+
+
+
+
+'''
+    experiments
+        - models
+            -- CNN_2025...
+            -- ...
+        - registry.json
+
+    data --> BASE_DATA
+        -dataset --> base_dataset
+            --train_data
+            --test_data
+            --train_labels.csv
+            
+        -preprocessed --> base_preprocessed 
+            --<Preprocess_name.zip> --> single_preprocessing_dir
+                [---train
+                    ---images
+                    ---.csv
+                ---test
+                    ---images
+                    ---.csv]
+'''
