@@ -25,7 +25,7 @@ class ModelRegistry:
 
         # Load existing registry or create new
         # Check if registry.json exists in current directory (that is, it was pulled from github) and move it
-        current_dir_registry = "registry.json"
+        current_dir_registry = Path("registry.json")
         if current_dir_registry.exists() and current_dir_registry != self.registry_path:
             import shutil
             print(f"📦 Moving registry.json from {current_dir_registry} to {self.registry_path}")
