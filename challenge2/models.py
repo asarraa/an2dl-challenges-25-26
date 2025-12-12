@@ -312,7 +312,7 @@ class HistologyResNet(nn.Module):
         # ---------------------------------------------------------
         # Sostituiamo l'ultimo layer fully connected per matchare le nostre classi
         self.model.fc = nn.Sequential(
-            nn.Dropout(p=0.3), # Aggiungiamo un po' di dropout per evitare overfitting
+            nn.Dropout(p=0.4), # Aggiungiamo un po' di dropout per evitare overfitting
             nn.Linear(last_channel_in, num_classes)
         )
 
