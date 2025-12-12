@@ -53,12 +53,10 @@ def instantiate_model(model_name, current_model_cfg, data_input_shape, device_ob
         # perché HistologyResNet non lo accetta nel costruttore __init__
         cfg_copy = current_model_cfg.copy()
         if 'input_shape' in cfg_copy:
-            del cfg_copy['input_shape']
+            del cfg_copy['input_shape']            
+        model = models.HistologyResNet(**cfg_copy)
     elif model_name=="CustomResNet":
         model = models.CustomResNet(**current_model_cfg)
-
-            
-        model = models.HistologyResNet(**cfg_copy)
     
     # Move model to device BEFORE calling summary (torchsummary requires this)
     model = model.to(device_obj)
