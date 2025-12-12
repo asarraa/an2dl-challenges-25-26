@@ -404,6 +404,47 @@ def weighted_mean_aggregation(
         
     return pd.DataFrame(rows).sort_values("sample_index"), slide_map
 
+
+def mil_aggregation(
+    tile_df: pd.DataFrame, 
+    meta_df: pd.DataFrame, 
+    prob_cols: List[str], 
+    inv_label_map: Dict[int, str]
+) -> Tuple[pd.DataFrame, Dict]:
+    """
+    Aggregazione 'MIL' (Multiple Instance Learning - Max Pooling).
+    La classe della slide è determinata dal tile con la probabilità più alta (pesata) per quella classe.
+    Cerca il "witness" (testimone) più forte.
+    """
+    # 1. Merge
+    merged = tile_df.merge(meta_df[["sample_index", "original_sample", "weight"]], on="sample_index", how="left")
+    
+    if merged["weight"].isnull().any():
+        merged["weight"] = merged["weight"].fillna(1.0)
+
+    # 2. Applichiamo comunque il peso per filtrare artefatti (es. sfondo nero con peso basso)
+    # Se il peso è 0, la probabilità diventa 0 e non verrà selezionata dal Max Pooling.
+    weighted_probs = merged[prob_cols].multiply(merged["weight"], axis=0)
+    weighted_probs["original_sample"] = merged["original_sample"]
+    
+    # 3. Max Pooling per Slide: Prendi il valore MASSIMO per ogni classe tra i tile della slide
+    # Esempio: Se una slide ha 1000 tile sani e 1 tile tumore (prob=0.9), il max per tumore sarà 0.9.
+    grouped_max = weighted_probs.groupby("original_sample")[prob_cols].max()
+    
+    # 4. Argmax tra le classi basato sui massimi
+    best_cols = grouped_max.idxmax(axis=1)
+    
+    rows = []
+    slide_map = {}
+    for slide_id, col_name in best_cols.items():
+        pred_idx = prob_cols.index(col_name)
+        label_str = inv_label_map[pred_idx]
+        slide_map[slide_id] = (pred_idx, label_str)
+        rows.append({"sample_index": slide_id, "label": label_str})
+        
+    return pd.DataFrame(rows).sort_values("sample_index"), slide_map
+
+
 def build_debug_table(tile_df: pd.DataFrame, meta_df: pd.DataFrame, inv_label_map: Dict[int, str], slide_map: Dict[str, tuple]) -> pd.DataFrame:
     """
     Return a dataframe with per-patch prediction and the final slide-level majority vote.
@@ -453,6 +494,13 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--output", type=Path, default=Path("submission.csv"), help="Path for the aggregated submission.")
     parser.add_argument("--save-tiles", type=Path, default=None, help="Optional path to store patch-level predictions.")
     parser.add_argument("--save-debug", type=Path, default=None, help="Optional path to store patch preds + final majority label.")
+    parser.add_argument(
+        "--aggregation-method", 
+        type=str, 
+        default="weighted_majority_vote", 
+        choices=["weighted_majority_vote", "mil"],
+        help="Aggregation method: 'weighted_majority_vote' (weighted average) or 'mil' (max pooling)."
+    )
     return parser.parse_args()
 
 
@@ -524,8 +572,15 @@ def main():
     # TESTING
     # Definisci le colonne delle probabilità attese
     prob_cols = [f"prob_{i}" for i in range(num_classes)]
-    # 2. Aggregazione pesata usando i pesi presenti in df_test
-    submission, slide_map = weighted_mean_aggregation(tile_preds, df_test, prob_cols, inv_label_map)
+    
+    # 2. Aggregazione usando il metodo scelto
+    print(f"[INFO] Using aggregation method: {args.aggregation_method}")
+    if args.aggregation_method == "weighted_majority_vote":
+        submission, slide_map = weighted_mean_aggregation(tile_preds, df_test, prob_cols, inv_label_map)
+    elif args.aggregation_method == "mil":
+        submission, slide_map = mil_aggregation(tile_preds, df_test, prob_cols, inv_label_map)
+    else:
+        raise ValueError(f"Unsupported aggregation method: {args.aggregation_method}")
 
     #submission, slide_map = majority_vote(tile_preds, df_test, inv_label_map)
     args.output.parent.mkdir(parents=True, exist_ok=True)

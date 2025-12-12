@@ -417,3 +417,115 @@ class CNNCustom(nn.Module):
         x = self.features(x)
         x = self.classifier_head(x)
         return x
+    
+
+
+
+
+    import torch
+import torch.nn as nn
+import torch.nn.functional as F
+
+class ResidualBlock(nn.Module):
+    """
+    Un blocco che impara la differenza (residuo) invece della funzione completa.
+    Molto più facile da addestrare per reti profonde.
+    """
+    def __init__(self, in_channels, out_channels, stride=1, downsample=None):
+        super().__init__()
+        self.conv1 = nn.Conv2d(in_channels, out_channels, kernel_size=3, 
+                               stride=stride, padding=1, bias=False)
+        self.bn1 = nn.BatchNorm2d(out_channels)
+        self.relu = nn.ReLU(inplace=True)
+        
+        self.conv2 = nn.Conv2d(out_channels, out_channels, kernel_size=3, 
+                               stride=1, padding=1, bias=False)
+        self.bn2 = nn.BatchNorm2d(out_channels)
+        
+        self.downsample = downsample
+
+    def forward(self, x):
+        identity = x
+
+        out = self.conv1(x)
+        out = self.bn1(out)
+        out = self.relu(out)
+
+        out = self.conv2(out)
+        out = self.bn2(out)
+
+        # Se le dimensioni cambiano (stride=2), adattiamo l'identità
+        if self.downsample is not None:
+            identity = self.downsample(x)
+
+        # IL SEGRETO: Sommiamo l'input originale all'output (Skip Connection)
+        out += identity 
+        out = self.relu(out)
+        return out
+
+class CustomResNet(nn.Module):
+    def __init__(self, input_shape=(3, 224, 224), num_classes=4, layers=[2, 2, 2, 2], start_channels=64):
+        """
+        layers=[2, 2, 2, 2] crea una struttura simile a ResNet18.
+        """
+        super().__init__()
+        self.in_channels = start_channels
+        
+        # 1. Stem (Ingresso iniziale)
+        # Usiamo kernel 7x7 e stride 2 per ridurre subito l'immagine da 224 a 112
+        self.conv1 = nn.Conv2d(input_shape[0], start_channels, kernel_size=7, stride=2, padding=3, bias=False)
+        self.bn1 = nn.BatchNorm2d(start_channels)
+        self.relu = nn.ReLU(inplace=True)
+        self.maxpool = nn.MaxPool2d(kernel_size=3, stride=2, padding=1) # Riduce da 112 a 56
+
+        # 2. Creazione dei Layer (Blocchi Residuali)
+        self.layer1 = self._make_layer(start_channels, layers[0])
+        self.layer2 = self._make_layer(start_channels * 2, layers[1], stride=2)
+        self.layer3 = self._make_layer(start_channels * 4, layers[2], stride=2)
+        self.layer4 = self._make_layer(start_channels * 8, layers[3], stride=2)
+
+        # 3. Testa di classificazione con Global Average Pooling (GAP)
+        # GAP risolve il problema della RAM e dell'overfitting sui layer lineari
+        self.avgpool = nn.AdaptiveAvgPool2d((1, 1))
+        self.fc = nn.Sequential(
+            nn.Flatten(),
+            nn.Dropout(0.5), # Dropout alto per regolarizzare
+            nn.Linear(start_channels * 8, num_classes)
+        )
+
+    def _make_layer(self, out_channels, blocks, stride=1):
+        downsample = None
+        # Se cambiamo dimensioni (stride != 1) o numero di canali, dobbiamo adattare l'identità
+        if stride != 1 or self.in_channels != out_channels:
+            downsample = nn.Sequential(
+                nn.Conv2d(self.in_channels, out_channels, kernel_size=1, stride=stride, bias=False),
+                nn.BatchNorm2d(out_channels),
+            )
+
+        layers = []
+        # Il primo blocco gestisce il cambio di dimensione/canali
+        layers.append(ResidualBlock(self.in_channels, out_channels, stride, downsample))
+        self.in_channels = out_channels
+        # I blocchi successivi mantengono la stessa dimensione
+        for _ in range(1, blocks):
+            layers.append(ResidualBlock(out_channels, out_channels))
+
+        return nn.Sequential(*layers)
+
+    def forward(self, x):
+        # Stem
+        x = self.conv1(x)
+        x = self.bn1(x)
+        x = self.relu(x)
+        x = self.maxpool(x)
+
+        # Layers
+        x = self.layer1(x)
+        x = self.layer2(x)
+        x = self.layer3(x)
+        x = self.layer4(x)
+
+        # Head
+        x = self.avgpool(x)
+        x = self.fc(x)
+        return x
