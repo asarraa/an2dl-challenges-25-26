@@ -258,7 +258,7 @@ class EfficientNetModel(nn.Module):
 
 
 class HistologyResNet(nn.Module):
-    def __init__(self, num_classes=4, use_pretrained=True, backbone='resnet18', input_channels=4):
+    def __init__(self, num_classes=4, use_pretrained=True, backbone='resnet18', input_channels=4, dropout_rate=0.4):
         """
         Modello basato su ResNet con supporto a 3 o 4 canali.
         Usa i pesi pre-addestrati di ImageNet per i canali RGB e inizializza
@@ -312,7 +312,7 @@ class HistologyResNet(nn.Module):
         # ---------------------------------------------------------
         # Sostituiamo l'ultimo layer fully connected per matchare le nostre classi
         self.model.fc = nn.Sequential(
-            nn.Dropout(p=0.3), # Aggiungiamo un po' di dropout per evitare overfitting
+            nn.Dropout(p=dropout_rate), # Aggiungiamo un po' di dropout per evitare overfitting
             nn.Linear(last_channel_in, num_classes)
         )
 
