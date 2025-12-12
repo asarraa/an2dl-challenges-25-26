@@ -60,6 +60,13 @@ RESNET_DEFAULTS = {
 }
 
 
+RESNET_CUSTOM_DEFAULTS = {
+    "input_shape":(3, 224, 224), 
+    "num_classes":4, 
+    "layers":[2, 2, 2, 2]
+}
+
+
 # 5. DIRECTORIES
 BASE_FOLDER = Path("./") # path for colab
 BASE_DATA = BASE_FOLDER / "data"
