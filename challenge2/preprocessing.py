@@ -234,9 +234,11 @@ def process_single_slide(img_path, mask_path, label, output_img_dir, is_test_set
             weight = max(0.005, 1.0 - black_ratio)**2  # Quadratic scaling to emphasize tissue-rich patches
                 
             tile_name = f"{base_name}_y{y}_x{x}.png"
+            
+            img_rgb = cv2.cvtColor(img_crop, cv2.COLOR_BGR2RGB)
                 
             # Save to disk
-            cv2.imwrite(str(output_img_dir / tile_name), img_crop)
+            cv2.imwrite(str(output_img_dir / tile_name), img_rgb)
 
             # Prepare metadata for CSV
             row = {
