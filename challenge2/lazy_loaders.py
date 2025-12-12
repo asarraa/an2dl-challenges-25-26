@@ -248,7 +248,9 @@ def get_loaders(augmentation=None, batch_size=LOADER_PARAMS["batch_size"], base_
     
     sample_weight = train_df['weight'].to_numpy()
     
-    sampler = WeightedRandomSampler(sample_weight, num_samples=len(sample_weight))
+    final_weights = class_weights[train_df['label'].to_numpy()]*sample_weight
+    
+    sampler = WeightedRandomSampler(final_weights, num_samples=len(sample_weight))
     
     # Determine shape depending on whether masks are appended
     if add_mask_channel:
