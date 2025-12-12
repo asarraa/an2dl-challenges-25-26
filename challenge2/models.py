@@ -110,9 +110,6 @@ class CNN(nn.Module):
         x = self.features(x)
         x = self.classifier_head(x)
         return x
-    
-
-
 
 # -----------------------------
 # Compound Scaling (EfficientNet), from "Advancements_in_Conv....ipynb"
@@ -258,31 +255,47 @@ class EfficientNetModel(nn.Module):
 
 
 class HistologyResNet(nn.Module):
-    def __init__(self, num_classes=4, use_pretrained=True, backbone='resnet18', input_channels=4, dropout_rate=0.4):
+    def __init__(self, num_classes=4, use_pretrained=True, backbone='resnet18', 
+                 input_channels=3, dropout_rate=0.4, freeze_backbone=False):
         """
-        Modello basato su ResNet con supporto a 3 o 4 canali.
-        Usa i pesi pre-addestrati di ImageNet per i canali RGB e inizializza
-        eventuali canali extra replicando la media dei pesi RGB.
+        Modello basato su ResNet con supporto a canali variabili e freezing opzionale.
+        
+        Args:
+            num_classes (int): Numero classi output.
+            use_pretrained (bool): Usa pesi ImageNet.
+            backbone (str): 'resnet18' o 'resnet50'.
+            input_channels (int): Canali input (default 3).
+            dropout_rate (float): Dropout nella testa.
+            freeze_backbone (bool): Se True, congela i pesi della backbone (layer 1-4)
+                                    e addestra solo fc (e conv1 se modificato).
         """
         super().__init__()
         
         # 1. Carichiamo la backbone pre-addestrata
-        # ResNet18 è leggera e veloce. Se hai molta GPU usa 'resnet50'
         if backbone == 'resnet18':
             self.model = models.resnet18(weights='DEFAULT' if use_pretrained else None)
-            last_channel_in = self.model.fc.in_features
         elif backbone == 'resnet50':
             self.model = models.resnet50(weights='DEFAULT' if use_pretrained else None)
-            last_channel_in = self.model.fc.in_features
         else:
             raise ValueError("Backbone supportata: resnet18, resnet50")
+            
+        last_channel_in = self.model.fc.in_features
 
         # ---------------------------------------------------------
-        # 2. CHIRURGIA DEL PRIMO LIVELLO (Input Layer Surgery)
+        # 2. LOGICA DI FREEZING (Prima della chirurgia)
+        # ---------------------------------------------------------
+        if freeze_backbone:
+            # Congeliamo TUTTI i parametri inizialmente
+            for param in self.model.parameters():
+                param.requires_grad = False
+            print("[INFO] Backbone congelata. Solo la testa (fc) e conv1 (se modificato) saranno addestrabili.")
+
+        # ---------------------------------------------------------
+        # 3. CHIRURGIA DEL PRIMO LIVELLO (Input Layer Surgery)
         # ---------------------------------------------------------
         original_conv1 = self.model.conv1
 
-        # Se il numero di canali coincide con l'originale (3), non serve cambiare nulla.
+        # Modifichiamo conv1 solo se i canali di input sono diversi dall'originale (solitamente 3)
         if input_channels != original_conv1.in_channels:
             new_conv1 = nn.Conv2d(
                 in_channels=input_channels,
@@ -295,31 +308,45 @@ class HistologyResNet(nn.Module):
 
             if use_pretrained:
                 with torch.no_grad():
-                    # Copia i primi canali disponibili (fino a 3)
+                    # Copia i pesi per i canali standard (RGB)
                     copy_channels = min(input_channels, original_conv1.in_channels)
                     new_conv1.weight[:, :copy_channels, :, :] = original_conv1.weight[:, :copy_channels, :, :]
 
-                    # Se servono canali extra (es. maschera), inizializza con la media dei pesi RGB
+                    # Inizializza canali extra con la media se necessario
                     if input_channels > original_conv1.in_channels:
                         extra_channels = input_channels - original_conv1.in_channels
                         mean_weight = torch.mean(original_conv1.weight, dim=1, keepdim=True)
                         new_conv1.weight[:, original_conv1.in_channels:input_channels, :, :] = mean_weight.repeat(1, extra_channels, 1, 1)
 
             self.model.conv1 = new_conv1
+            
+            # Se abbiamo congelato la backbone ma cambiato conv1, DOBBIAMO sbloccarlo
+            if freeze_backbone:
+                for param in self.model.conv1.parameters():
+                    param.requires_grad = True
         
         # ---------------------------------------------------------
-        # 3. CHIRURGIA DELLA TESTA (Classification Head)
+        # 4. CHIRURGIA DELLA TESTA (Classification Head)
         # ---------------------------------------------------------
-        # Sostituiamo l'ultimo layer fully connected per matchare le nostre classi
         self.model.fc = nn.Sequential(
-            nn.Dropout(p=dropout_rate), # Aggiungiamo un po' di dropout per evitare overfitting
+            nn.Dropout(p=dropout_rate),
             nn.Linear(last_channel_in, num_classes)
         )
+        
+        # La nuova testa è creata da zero, quindi ha requires_grad=True di default.
+        # Tuttavia, se avevamo congelato tutto, assicuriamoci che sia sbloccata.
+        if freeze_backbone:
+            for param in self.model.fc.parameters():
+                param.requires_grad = True
 
     def forward(self, x):
         return self.model(x)
 
-
+    def unfreeze(self):
+        """Metodo helper per sbloccare tutto il modello per il fine-tuning successivo."""
+        for param in self.parameters():
+            param.requires_grad = True
+        print("[INFO] Modello completamente sbloccato.")
 
 class VanillaCNNBlockCustom(nn.Module):
     def __init__(self, in_channels, out_channels, num_convs=1, use_stride=False, stride_value=2, padding_size=1, pool_size=2):
