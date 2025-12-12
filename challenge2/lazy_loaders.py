@@ -99,6 +99,9 @@ class LazyImageDataset(torch.utils.data.Dataset):
         if self.transform:
             image_tensor = self.transform(image_tensor)
         
+        if not self.transform: # Likely validation
+            if image_tensor.max() > 5.0:
+                print(f"[WARNING] Image {img_name} has max value {image_tensor.max()}! Normalization might be broken.")
         # Return the image tensor and label as torch.long type
         return image_tensor, torch.tensor(label, dtype=torch.long)
 
