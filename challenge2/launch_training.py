@@ -192,6 +192,7 @@ def start_training(model_name="CNN", model_params=None, training_params=None, de
     }
 
     comet_experiment.log_parameters(hyper_params)
+    comet_experiment.log_parameters(current_model_cfg)
     #data_input_shape =  data_input_shape
 
     # -------------------------------------------------------
