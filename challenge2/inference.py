@@ -11,24 +11,28 @@ import numpy as np
 import torch.nn.functional as F
 
 
-def make_inference(loader, device, input_shape, model_path, model_name, experiment_id, base_path):
+def make_inference(loader, device, input_shape, model_path, model_name, experiment_id, base_path, inference_type="weighted_majority_vote"):
+    """
+    Esegue inferenza e aggregazione.
+    inference_type: "weighted_majority_vote" (Media pesata) o "mil" (Max Pooling).
+    """
+    
+    print(f"[INFO] Starting inference with mode: {inference_type}")
     
     inv_label_map = {v: k for k, v in config.LABEL_MAP.items()}
 
     _, _, csv_path = _resolve_paths(base_path=base_path, add_mask_channel=False, is_test=True)
 
-    # Read CSV metadata into memory (very small footprint)
+    # Read CSV metadata into memory
     df_test = pd.read_csv(csv_path)
 
-    # TESTING
     if "weight" not in df_test.columns:
         print("[WARNING] Colonna 'weight' non trovata in test_patches.csv. Uso peso 1.0 per tutti.")
         df_test["weight"] = 1.0
 
-    # Preload checkpoint metadata to adapt channels
+    # Preload checkpoint metadata
     ckpt, state_dict = load_checkpoint(model_path, map_location="cpu")
     ckpt_channels = infer_conv1_in_channels(state_dict)
-
 
     model = load_model(
         model_path,
@@ -40,26 +44,29 @@ def make_inference(loader, device, input_shape, model_path, model_name, experime
         ckpt_channels=ckpt_channels,
     )
     model.to(device)
-
-    #tile_preds = predict(model, loader, device)
-
-    #submission, slide_map = majority_vote(tile_preds, df_test, inv_label_map)
     
-    # TESTING
+    # 1. Otteniamo le probabilità per ogni tile
     num_classes = len(config.LABEL_MAP)
     tile_preds = predict2(model, loader, device, num_classes)
-    # TESTING
-    # Definisci le colonne delle probabilità attese
     prob_cols = [f"prob_{i}" for i in range(num_classes)]
-    # 2. Aggregazione pesata usando i pesi presenti in df_test
-    submission, slide_map = weighted_mean_aggregation(tile_preds, df_test, prob_cols, inv_label_map)
 
+    # 2. Scegliamo la strategia di aggregazione (Bag-level inference)
+    if inference_type == "weighted_majority_vote":
+        # Strategia attuale: Media pesata delle probabilità
+        submission, slide_map = weighted_mean_aggregation(tile_preds, df_test, prob_cols, inv_label_map)
+    
+    elif inference_type == "mil":
+        # Strategia MIL: Max Pooling (il tile più forte decide per la slide)
+        submission, slide_map = mil_aggregation(tile_preds, df_test, prob_cols, inv_label_map)
+        
+    else:
+        raise ValueError(f"Inference type '{inference_type}' non supportato. Usa 'weighted_majority_vote' o 'mil'.")
+
+    # Salvataggio
     output = Path(base_path+"/"+experiment_id+"_submission.csv")
     output.parent.mkdir(parents=True, exist_ok=True)
     submission.to_csv(output, index=False)
     print(f"[INFO] Saved submission to {output}")
-
-
 
 
 def load_model(
@@ -96,11 +103,8 @@ def load_model(
         model_cfg["num_classes"] = num_classes
         model = models.EfficientNetModel(**model_cfg)
     elif name == "HistologyResNet":
-        backbone = cfg.get("backbone", "resnet18")
-        use_pretrained = cfg.get("use_pretrained", False)
         if ckpt_channels == 4 or c == 4:
-            raise ValueError("[ERROR] Tried using HistologyResNet with 4 input channels, which is obsolete and not supported.")
-            #model = LegacyHistologyResNet(num_classes=num_classes, use_pretrained=use_pretrained, backbone=backbone)
+            raise ValueError("[ERROR] Tried using HistologyResNet with 4 input channels, which is obsolete.")
         else:
             model_cfg = config.RESNET_DEFAULTS.copy()
             model_cfg.update({k: v for k, v in cfg.items() if k in model_cfg})
@@ -122,79 +126,14 @@ def load_checkpoint(path: Path, map_location: str = "cpu"):
 
 
 def infer_conv1_in_channels(state_dict: dict) -> Optional[int]:
-    """Infer expected input channels from checkpoint weights."""
     for key, value in state_dict.items():
         if key.endswith("conv1.weight") and hasattr(value, "shape"):
             return value.shape[1]
     return None
 
 
-
-
 # ------------------------------
-# Inference + aggregation
-# ------------------------------
-def predict(model: torch.nn.Module, loader: DataLoader, device: torch.device) -> pd.DataFrame:
-    model.eval()
-    names, preds, weights, black_ratios = [], [], [], []
-    with torch.no_grad():
-        for batch in loader:
-            if len(batch) == 3:
-                imgs, batch_names, batch_black = batch
-            else:
-                imgs, batch_names = batch
-                batch_black = torch.zeros(len(batch_names))
-
-            imgs = imgs.to(device)
-            logits = model(imgs)
-            batch_preds = logits.argmax(dim=1).cpu().tolist()
-
-            names.extend(batch_names)
-            preds.extend(batch_preds)
-            black_list = batch_black.tolist()
-            black_ratios.extend(black_list)
-            weights.extend([max(0.05, 1.0 - b) for b in black_list])
-
-    return pd.DataFrame(
-        {
-            "sample_index": names,
-            "pred_idx": preds,
-            "black_ratio": black_ratios,
-            "weight": weights,
-        }
-    )
-
-
-def majority_vote(tile_df: pd.DataFrame, meta_df: pd.DataFrame, inv_label_map: Dict[int, str]) -> pd.DataFrame:
-    df = tile_df.copy()
-    default_weights = df["weight"] if "weight" in df.columns else 1.0
-
-    # Prefer patch weights coming from the metadata CSV (precomputed during preprocessing)
-    if "weight" in meta_df.columns:
-        weight_map = meta_df.set_index("sample_index")["weight"]
-        df["weight"] = df["sample_index"].map(weight_map).fillna(default_weights)
-    elif "weight" not in df.columns:
-        df["weight"] = 1.0
-
-    if "original_sample" in meta_df.columns:
-        original_map = meta_df.set_index("sample_index")["original_sample"]
-        df["original_sample"] = df["sample_index"].map(original_map).fillna(df["sample_index"])
-        groups = df.groupby("original_sample")
-    else:
-        groups = df.groupby("sample_index")
-
-    rows = []
-    slide_map = {}
-    for slide, group in groups:
-        scores = group.groupby("pred_idx")["weight"].sum()
-        best_idx = scores.idxmax()
-        label_str = inv_label_map[int(best_idx)]
-        slide_map[slide] = (int(best_idx), label_str)
-        rows.append({"sample_index": slide, "label": label_str})
-    return pd.DataFrame(rows).sort_values("sample_index"), slide_map
-
-# ------------------------------
-# Test on probabilities instead of argmax
+# Inference Helpers
 # ------------------------------
 
 def predict2(model: torch.nn.Module, loader: DataLoader, device: torch.device, num_classes: int) -> pd.DataFrame:
@@ -203,32 +142,24 @@ def predict2(model: torch.nn.Module, loader: DataLoader, device: torch.device, n
     """
     model.eval()
     names = []
-    # Pre-allochiamo una lista per le probabilità
     all_probs = []
 
     with torch.no_grad():
         for batch in loader:
             if len(batch) == 3:
-                imgs, batch_names, _ = batch # Ignoriamo black_ratio qui
+                imgs, batch_names, _ = batch 
             else:
                 imgs, batch_names = batch
 
             imgs = imgs.to(device)
             logits = model(imgs)
-            
-            # Calcola le probabilità con Softmax
             probs = F.softmax(logits, dim=1)
             
             names.extend(batch_names)
             all_probs.append(probs.cpu().numpy())
 
-    # Concatena tutti i batch di probabilità
     all_probs = np.concatenate(all_probs, axis=0)
-    
-    # Crea il dizionario per il DataFrame
     data = {"sample_index": names}
-    
-    # Aggiunge colonne dinamicamente: prob_0, prob_1, etc.
     prob_cols = [f"prob_{i}" for i in range(num_classes)]
     for i, col in enumerate(prob_cols):
         data[col] = all_probs[:, i]
@@ -243,118 +174,89 @@ def weighted_mean_aggregation(
     inv_label_map: Dict[int, str]
 ) -> Tuple[pd.DataFrame, Dict]:
     """
-    Aggrega usando la media ponderata delle probabilità.
-    tile_df: contiene le probabilità (output di predict).
-    meta_df: contiene 'original_sample' e 'weight' (dal CSV di test).
+    Aggregazione 'Weighted Majority Vote' (Media Pesata delle Probabilità).
+    Smussa i picchi e decide in base alla "massa" di evidenza.
     """
-    
-    # 1. Merge: Uniamo le predizioni (tile_df) con i metadati e i pesi (meta_df)
-    # Assumiamo che meta_df abbia le colonne 'sample_index', 'original_sample' e 'weight'
     merged = tile_df.merge(meta_df[["sample_index", "original_sample", "weight"]], on="sample_index", how="left")
     
-    # Gestione sicurezza: se manca il peso, usa 1.0
     if merged["weight"].isnull().any():
-        print("[WARNING] Alcuni pesi sono NaN dopo il merge. Verranno impostati a 1.0")
         merged["weight"] = merged["weight"].fillna(1.0)
 
-    # 2. Calcolo Numeratore: Probabilità * Peso Tile
+    # Numeratore: Probabilità * Peso
     weighted_probs = merged[prob_cols].multiply(merged["weight"], axis=0)
     weighted_probs["original_sample"] = merged["original_sample"]
     
-    # 3. Somma per Slide (Groupby)
-    # Nota: Non serve dividere per la somma dei pesi per trovare l'argmax, 
-    # perché il denominatore sarebbe lo stesso per tutte le classi della stessa slide.
+    # Somma per Slide (equivale alla media pesata ai fini dell'argmax)
     grouped_sums = weighted_probs.groupby("original_sample")[prob_cols].sum()
     
-    # 4. Argmax: Trova la classe con il valore cumulativo più alto
+    # Argmax
     best_cols = grouped_sums.idxmax(axis=1)
     
     rows = []
     slide_map = {}
-    
     for slide_id, col_name in best_cols.items():
-        # Estrae l'indice numerico dal nome della colonna (es. "prob_3" -> 3)
-        # Assicurati che prob_cols sia ordinato correttamente
         pred_idx = prob_cols.index(col_name)
         label_str = inv_label_map[pred_idx]
-        
         slide_map[slide_id] = (pred_idx, label_str)
         rows.append({"sample_index": slide_id, "label": label_str})
         
     return pd.DataFrame(rows).sort_values("sample_index"), slide_map
 
-def build_debug_table(tile_df: pd.DataFrame, meta_df: pd.DataFrame, inv_label_map: Dict[int, str], slide_map: Dict[str, tuple]) -> pd.DataFrame:
-    """
-    Return a dataframe with per-patch prediction and the final slide-level majority vote.
-    Columns: sample_index (patch), original_sample, pred_idx, pred_label, weight, black_ratio, final_pred_idx, final_pred_label
-    """
-    if "original_sample" in meta_df.columns:
-        merged = tile_df.merge(meta_df[["sample_index", "original_sample"]], on="sample_index", how="left")
-    else:
-        merged = tile_df.copy()
-        merged["original_sample"] = merged["sample_index"]
 
-    merged["pred_label"] = merged["pred_idx"].map(inv_label_map)
-    if "weight" in meta_df.columns:
-        weight_map = meta_df.set_index("sample_index")["weight"]
-        merged["weight"] = merged["sample_index"].map(weight_map).fillna(merged["weight"] if "weight" in merged.columns else 1.0)
-    elif "weight" not in merged.columns:
-        merged["weight"] = 1.0
-    if "black_ratio" not in merged.columns:
-        merged["black_ratio"] = None
-    merged["final_pred_idx"] = merged["original_sample"].map(lambda s: slide_map[s][0])
-    merged["final_pred_label"] = merged["original_sample"].map(lambda s: slide_map[s][1])
-    return merged
+def mil_aggregation(
+    tile_df: pd.DataFrame, 
+    meta_df: pd.DataFrame, 
+    prob_cols: List[str], 
+    inv_label_map: Dict[int, str]
+) -> Tuple[pd.DataFrame, Dict]:
+    """
+    Aggregazione 'MIL' (Multiple Instance Learning - Max Pooling).
+    La classe della slide è determinata dal tile con la probabilità più alta (pesata) per quella classe.
+    Cerca il "witness" (testimone) più forte.
+    """
+    # 1. Merge
+    merged = tile_df.merge(meta_df[["sample_index", "original_sample", "weight"]], on="sample_index", how="left")
+    
+    if merged["weight"].isnull().any():
+        merged["weight"] = merged["weight"].fillna(1.0)
 
+    # 2. Applichiamo comunque il peso per filtrare artefatti (es. sfondo nero con peso basso)
+    # Se il peso è 0, la probabilità diventa 0 e non verrà selezionata dal Max Pooling.
+    weighted_probs = merged[prob_cols].multiply(merged["weight"], axis=0)
+    weighted_probs["original_sample"] = merged["original_sample"]
+    
+    # 3. Max Pooling per Slide: Prendi il valore MASSIMO per ogni classe tra i tile della slide
+    # Esempio: Se una slide ha 1000 tile sani e 1 tile tumore (prob=0.9), il max per tumore sarà 0.9.
+    grouped_max = weighted_probs.groupby("original_sample")[prob_cols].max()
+    
+    # 4. Argmax tra le classi basato sui massimi
+    best_cols = grouped_max.idxmax(axis=1)
+    
+    rows = []
+    slide_map = {}
+    for slide_id, col_name in best_cols.items():
+        pred_idx = prob_cols.index(col_name)
+        label_str = inv_label_map[pred_idx]
+        slide_map[slide_id] = (pred_idx, label_str)
+        rows.append({"sample_index": slide_id, "label": label_str})
+        
+    return pd.DataFrame(rows).sort_values("sample_index"), slide_map
 
 
 def pick_model_name(user_choice: Optional[str], ckpt: dict, state_dict: dict) -> str:
-    if user_choice:
-        return user_choice
+    if user_choice: return user_choice
     for key in ("model_name",):
-        if key in ckpt:
-            return ckpt[key]
+        if key in ckpt: return ckpt[key]
     cfg = ckpt.get("config") or {}
-    if isinstance(cfg, dict) and "model_name" in cfg:
-        return cfg["model_name"]
-
+    if isinstance(cfg, dict) and "model_name" in cfg: return cfg["model_name"]
     inferred = infer_model_from_state_dict(state_dict)
-    if inferred:
-        print(f"[INFO] Detected architecture from checkpoint: {inferred}")
-        return inferred
-
+    if inferred: return inferred
     return config.MODEL_NAME
 
-
-
-# ------------------------------
-# Model helpers
-# ------------------------------
 def infer_model_from_state_dict(state_dict: dict) -> Optional[str]:
     keys = list(state_dict.keys())
-    if any(k.startswith("model.layer1") or k.startswith("model.conv1") for k in keys):
-        return "HistologyResNet"
-    if any(k.startswith("features.") for k in keys):
-        return "CNN"
-    # Simple heuristic for EfficientNetModel keys
-    if any("units.0" in k or "MBConvBlock" in k for k in keys):
-        return "EfficientNet"
+    if any(k.startswith("model.layer1") or k.startswith("model.conv1") for k in keys): return "HistologyResNet"
+    if any(k.startswith("features.") for k in keys): return "CNN"
+    if any("units.0" in k or "MBConvBlock" in k for k in keys): return "EfficientNet"
     return None
 
-# i want to try if it works now
-if __name__ == "__main__":
-    
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    test_loader, obs_input_shape = get_test_loaders(batch_size=128, base_path="./data/preprocessed/preprocess_v1_weighted")
-    
-    # Opzionale: puoi usare obs_input_shape invece di hardcodare (3, 224, 224)
-    print(f"Detected input shape: {obs_input_shape}")
-    make_inference(
-        loader=test_loader,
-        device=device,
-        input_shape=obs_input_shape,
-        model_path=Path("./HistologyResNet_20251210_101039.pt"),
-        model_name="HistologyResNet",
-        batch_size=128,
-        output="submission.csv"
-    )
