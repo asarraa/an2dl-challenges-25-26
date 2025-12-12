@@ -210,13 +210,17 @@ def get_loaders(augmentation=None, batch_size=LOADER_PARAMS["batch_size"], base_
     # Replace labels in dataframe with integer mapping
     df['label'] = df['label'].map(config.LABEL_MAP)
     
-    # Split dataset into train and validation sets (stratified by label distribution)
-    train_df, val_df = train_test_split(
-        df,
-        test_size=LOADER_PARAMS["percentage_validation"],  # percentage for validation in config
-        random_state=SEED,                                  # reproducible split
-        stratify=df['label']                                # maintain class balance
+    unique_img_df = df.groupby('original_sample')['label'].first().reset_index()
+    
+    train_imgs, val_imgs = train_test_split(
+        unique_img_df['original_sample'],
+        test_size=LOADER_PARAMS["percentage_validation"],
+        random_state=SEED,
+        stratify=unique_img_df['label']
     )
+    
+    train_df = df[df['original_sample'].isin(train_imgs)].reset_index(drop=True)
+    val_df = df[df['original_sample'].isin(val_imgs)].reset_index(drop=True)
     
     # Load one sample image for determining input shape
     sample_path = images_dir / df.iloc[0]['sample_index']
