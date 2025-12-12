@@ -142,6 +142,9 @@ class TestImageDataset(torch.utils.data.Dataset):
 
         image_tensor = self.to_tensor(Image.fromarray(image))
 
+        if not self.transform: # Likely validation
+            if image_tensor.max() > 5.0:
+                print(f"[WARNING] Image {img_name} has max value {image_tensor.max()}! Normalization might be broken.")
         return image_tensor, img_name
 
 def make_loader(ds, batch_size, drop_last, shuffle=False, sampler=None):
@@ -157,6 +160,7 @@ def make_loader(ds, batch_size, drop_last, shuffle=False, sampler=None):
             ds,                         # Dataset object
             batch_size=batch_size,      # Number of samples per batch
             sampler=sampler,            # Shuffle (True for training)
+            shuffle=False,
             drop_last=drop_last,        # Drop final batch if smaller size
             num_workers=num_workers,    # Parallel workers for loading data
             pin_memory=True,            # Speeds transfer to GPU
