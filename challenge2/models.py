@@ -318,3 +318,102 @@ class HistologyResNet(nn.Module):
 
     def forward(self, x):
         return self.model(x)
+
+
+
+class VanillaCNNBlockCustom(nn.Module):
+    def __init__(self, in_channels, out_channels, num_convs=1, use_stride=False, stride_value=2, padding_size=1, pool_size=2):
+        super().__init__()
+        layers = []
+        
+        # 1. Gestiamo le convoluzioni multiple
+        for i in range(num_convs):
+            # Logica per gestire input/output channels
+            cin = in_channels if i == 0 else out_channels
+            cout = out_channels
+            
+            # Logica per lo stride (lo applichiamo solo all'ultima conv se richiesto)
+            # Nota: applicare stride all'ultima conv è tipico di ResNet, 
+            # applicare MaxPool alla fine è tipico di VGG.
+            current_stride = 1
+            if use_stride and i == (num_convs - 1):
+                current_stride = stride_value
+            
+            layers.append(nn.Conv2d(cin, cout, kernel_size=3, padding=padding_size, stride=current_stride))
+            layers.append(nn.BatchNorm2d(cout)) # <--- Aggiunta Cruciale
+            layers.append(nn.ReLU())            # <--- Aggiunta Cruciale dopo OGNI conv
+
+        # 2. Pooling (se non usiamo stride per downsampling)
+        if not use_stride:
+            layers.append(nn.MaxPool2d(kernel_size=pool_size, stride=pool_size))
+
+        self.block = nn.Sequential(*layers)
+
+    def forward(self, x):
+        return self.block(x)
+    
+
+    # Convolutional Neural Network architecture for CIFAR10 classification
+#N.B. If use_stride is true, we apply downsapling with stride, otherwise we downsample with pooling
+class CNNCustom(nn.Module):
+    def __init__(self, input_shape=(3,32,32), num_classes=10,
+                 num_blocks=2, convs_per_block=1,
+                 use_stride=False, stride_value=2, padding_size=1, pool_size=2,
+                 initial_channels=32, channel_multiplier=2, dropout_rate_classifier_head=0.2):
+        super().__init__()
+        print("[DEBUG] Initializing CNN model with the following parameters:")
+        print(f"input_shape: {input_shape}")
+        print(f"num_classes: {num_classes}")
+        print(f"num_blocks: {num_blocks}")
+        print(f"convs_per_block: {convs_per_block}")
+        print(f"use_stride: {use_stride}")
+        print(f"stride_value: {stride_value}")
+        print(f"padding_size: {padding_size}")
+        print(f"pool_size: {pool_size}")
+        print(f"initial_channels: {initial_channels}")
+        print(f"channel_multiplier: {channel_multiplier}")
+        print(f"dropout_rate_classifier_head: {dropout_rate_classifier_head}")
+
+        # Build convolutional blocks
+        blocks = []
+        in_channels = input_shape[0]
+        out_channels = initial_channels
+
+        #append single CNN Blocks defined in the VanillaCNNBlock class
+        for i in range(num_blocks):
+            blocks.append(VanillaCNNBlockCustom(
+                in_channels=in_channels,
+                out_channels=out_channels,
+                num_convs=convs_per_block,
+                use_stride=use_stride,
+                stride_value=stride_value,
+                padding_size=padding_size,
+                pool_size=pool_size
+            ))
+
+            # Prepare for next block: increase channels
+            in_channels = out_channels
+            out_channels = out_channels * channel_multiplier
+
+        self.features = nn.Sequential(*blocks) #create a sequential layer with the blocks (this is the sequence extractor)
+
+        # Calculate flattened size after all blocks using a dummy forward pass
+        # This approach is robust and works with any configuration of padding, stride, and pooling
+        with torch.no_grad():
+            dummy_input = torch.zeros(1, *input_shape)
+            dummy_output = self.features(dummy_input)
+            flattened_size = dummy_output.view(1, -1).shape[1]
+
+        # Classification head: flatten features and apply dropout before final layer
+        # simple 1 layer feed forward neural network (this is the classification head network)
+        self.classifier_head = nn.Sequential(
+            nn.Flatten(),
+            nn.Dropout(dropout_rate_classifier_head),
+            nn.Linear(flattened_size, num_classes)
+        )
+
+    # Forward pass through the network
+    def forward(self, x):
+        x = self.features(x)
+        x = self.classifier_head(x)
+        return x

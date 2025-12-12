@@ -44,6 +44,8 @@ def instantiate_model(model_name, current_model_cfg, data_input_shape, device_ob
     # We unpack (**current_model_cfg) directly into the class
     if model_name == "CNN":
         model = models.CNN(**current_model_cfg)
+    elif model_name == "CNNCustom":
+        model = models.CNNCustom(**current_model_cfg)
     elif model_name == "EfficientNet":
         model = models.EfficientNetModel(**current_model_cfg)
     
