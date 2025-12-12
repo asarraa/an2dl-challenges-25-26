@@ -4,10 +4,11 @@ import pandas as pd
 from lazy_loaders import _resolve_paths, get_test_loaders
 import os
 from pathlib import Path
-from typing import Dict, Optional, Tuple
+from typing import Dict, Optional, Tuple, List
 import models
 from torch.utils.data import DataLoader 
-
+import numpy as np
+import torch.nn.functional as F
 
 
 def make_inference(loader, device, input_shape, model_path, model_name, experiment_id, base_path):
@@ -19,6 +20,10 @@ def make_inference(loader, device, input_shape, model_path, model_name, experime
     # Read CSV metadata into memory (very small footprint)
     df_test = pd.read_csv(csv_path)
 
+    # TESTING
+    if "weight" not in df_test.columns:
+        print("[WARNING] Colonna 'weight' non trovata in test_patches.csv. Uso peso 1.0 per tutti.")
+        df_test["weight"] = 1.0
 
     # Preload checkpoint metadata to adapt channels
     ckpt, state_dict = load_checkpoint(model_path, map_location="cpu")
@@ -36,9 +41,18 @@ def make_inference(loader, device, input_shape, model_path, model_name, experime
     )
     model.to(device)
 
-    tile_preds = predict(model, loader, device)
+    #tile_preds = predict(model, loader, device)
 
-    submission, slide_map = majority_vote(tile_preds, df_test, inv_label_map)
+    #submission, slide_map = majority_vote(tile_preds, df_test, inv_label_map)
+    
+    # TESTING
+    num_classes = len(config.LABEL_MAP)
+    tile_preds = predict2(model, loader, device, num_classes)
+    # TESTING
+    # Definisci le colonne delle probabilità attese
+    prob_cols = [f"prob_{i}" for i in range(num_classes)]
+    # 2. Aggregazione pesata usando i pesi presenti in df_test
+    submission, slide_map = weighted_mean_aggregation(tile_preds, df_test, prob_cols, inv_label_map)
 
     output = Path(base_path+"/"+experiment_id+"_submission.csv")
     output.parent.mkdir(parents=True, exist_ok=True)
@@ -179,6 +193,95 @@ def majority_vote(tile_df: pd.DataFrame, meta_df: pd.DataFrame, inv_label_map: D
         rows.append({"sample_index": slide, "label": label_str})
     return pd.DataFrame(rows).sort_values("sample_index"), slide_map
 
+# ------------------------------
+# Test on probabilities instead of argmax
+# ------------------------------
+
+def predict2(model: torch.nn.Module, loader: DataLoader, device: torch.device, num_classes: int) -> pd.DataFrame:
+    """
+    Esegue l'inferenza restituendo le probabilità (Softmax) per ogni classe.
+    """
+    model.eval()
+    names = []
+    # Pre-allochiamo una lista per le probabilità
+    all_probs = []
+
+    with torch.no_grad():
+        for batch in loader:
+            if len(batch) == 3:
+                imgs, batch_names, _ = batch # Ignoriamo black_ratio qui
+            else:
+                imgs, batch_names = batch
+
+            imgs = imgs.to(device)
+            logits = model(imgs)
+            
+            # Calcola le probabilità con Softmax
+            probs = F.softmax(logits, dim=1)
+            
+            names.extend(batch_names)
+            all_probs.append(probs.cpu().numpy())
+
+    # Concatena tutti i batch di probabilità
+    all_probs = np.concatenate(all_probs, axis=0)
+    
+    # Crea il dizionario per il DataFrame
+    data = {"sample_index": names}
+    
+    # Aggiunge colonne dinamicamente: prob_0, prob_1, etc.
+    prob_cols = [f"prob_{i}" for i in range(num_classes)]
+    for i, col in enumerate(prob_cols):
+        data[col] = all_probs[:, i]
+
+    return pd.DataFrame(data)
+
+
+def weighted_mean_aggregation(
+    tile_df: pd.DataFrame, 
+    meta_df: pd.DataFrame, 
+    prob_cols: List[str], 
+    inv_label_map: Dict[int, str]
+) -> Tuple[pd.DataFrame, Dict]:
+    """
+    Aggrega usando la media ponderata delle probabilità.
+    tile_df: contiene le probabilità (output di predict).
+    meta_df: contiene 'original_sample' e 'weight' (dal CSV di test).
+    """
+    
+    # 1. Merge: Uniamo le predizioni (tile_df) con i metadati e i pesi (meta_df)
+    # Assumiamo che meta_df abbia le colonne 'sample_index', 'original_sample' e 'weight'
+    merged = tile_df.merge(meta_df[["sample_index", "original_sample", "weight"]], on="sample_index", how="left")
+    
+    # Gestione sicurezza: se manca il peso, usa 1.0
+    if merged["weight"].isnull().any():
+        print("[WARNING] Alcuni pesi sono NaN dopo il merge. Verranno impostati a 1.0")
+        merged["weight"] = merged["weight"].fillna(1.0)
+
+    # 2. Calcolo Numeratore: Probabilità * Peso Tile
+    weighted_probs = merged[prob_cols].multiply(merged["weight"], axis=0)
+    weighted_probs["original_sample"] = merged["original_sample"]
+    
+    # 3. Somma per Slide (Groupby)
+    # Nota: Non serve dividere per la somma dei pesi per trovare l'argmax, 
+    # perché il denominatore sarebbe lo stesso per tutte le classi della stessa slide.
+    grouped_sums = weighted_probs.groupby("original_sample")[prob_cols].sum()
+    
+    # 4. Argmax: Trova la classe con il valore cumulativo più alto
+    best_cols = grouped_sums.idxmax(axis=1)
+    
+    rows = []
+    slide_map = {}
+    
+    for slide_id, col_name in best_cols.items():
+        # Estrae l'indice numerico dal nome della colonna (es. "prob_3" -> 3)
+        # Assicurati che prob_cols sia ordinato correttamente
+        pred_idx = prob_cols.index(col_name)
+        label_str = inv_label_map[pred_idx]
+        
+        slide_map[slide_id] = (pred_idx, label_str)
+        rows.append({"sample_index": slide_id, "label": label_str})
+        
+    return pd.DataFrame(rows).sort_values("sample_index"), slide_map
 
 def build_debug_table(tile_df: pd.DataFrame, meta_df: pd.DataFrame, inv_label_map: Dict[int, str], slide_map: Dict[str, tuple]) -> pd.DataFrame:
     """
