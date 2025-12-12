@@ -187,10 +187,13 @@ def start_training(model_name="CNN", model_params=None, training_params=None, de
     comet_experiment.set_name(run_id)
 
     hyper_params = {
-      "learning_rate": current_train_cfg['learning_rate'],
-      "batch_size": config.LOADER_PARAMS['batch_size'],
-      "epochs": current_train_cfg['epochs'],
-      "model": model_name,
+        **current_train_cfg, **current_model_cfg
+        #
+        #"learning_rate": current_train_cfg['learning_rate'],
+        #"batch_size": config.LOADER_PARAMS['batch_size'],
+        #"epochs": current_train_cfg['epochs'],
+        #"model": model_name,
+
     }
 
     comet_experiment.log_parameters(hyper_params)
@@ -280,7 +283,6 @@ def start_training(model_name="CNN", model_params=None, training_params=None, de
         "train_loss": training_history['train_loss'][-1],
         "best_val_f1": max(training_history['val_f1']), # or however you track best
         "best_train_f1": max(training_history['train_f1'])
-
     }
     
     # Add 'model_name' to model_cfg so it appears in the ID
