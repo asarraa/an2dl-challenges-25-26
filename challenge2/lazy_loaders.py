@@ -41,7 +41,11 @@ class LazyImageDataset(torch.utils.data.Dataset):
         # Base transform always used (convert image to tensor)
         self.to_tensor = transforms.Compose([
             transforms.ToImage(),                                 # Convert PIL/numpy to Torch tensor
-            transforms.ToDtype(torch.float32, scale=True)         # Convert dtype and scale to [0,1]
+            transforms.ToDtype(torch.float32, scale=True),         # Convert dtype and scale to [0,1]
+            transforms.Normalize(
+                mean=[0.485, 0.456, 0.406], 
+                std=[0.229, 0.224, 0.225]
+            )
         ])
     
     def __len__(self):
@@ -263,7 +267,8 @@ def get_loaders(augmentation=None, batch_size=LOADER_PARAMS["batch_size"], base_
             transforms.RandomHorizontalFlip(p=0.5),                                   # 50% chance of horizontal flip
             transforms.RandomVerticalFlip(p=0.5),                                     # 50% chance of vertical flip
             transforms.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2),     # Random color perturbations
-            transforms.RandomAffine(degrees=15, translate=(0.1, 0.1), scale=(0.9, 1.1)) # Random rotations/scaling
+            transforms.RandomResizedCrop(size=(224, 224), scale=(0.8, 1.0)),          # Random rotations/scaling
+            transforms.RandomRotation(degrees=90)                                     # Random rotations
         ])
     else:
         # Use custom augmentations if provided
