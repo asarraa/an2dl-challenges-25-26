@@ -118,7 +118,11 @@ class TestImageDataset(torch.utils.data.Dataset):
         # Base transform always used (convert image to tensor)
         self.to_tensor = transforms.Compose([
             transforms.ToImage(),                                 # Convert PIL/numpy to Torch tensor
-            transforms.ToDtype(torch.float32, scale=True)         # Convert dtype and scale to [0,1]
+            transforms.ToDtype(torch.float32, scale=True),         # Convert dtype and scale to [0,1]
+            transforms.Normalize(
+                mean=[0.485, 0.456, 0.406], 
+                std=[0.229, 0.224, 0.225]
+            )
         ])
 
     def __len__(self):
