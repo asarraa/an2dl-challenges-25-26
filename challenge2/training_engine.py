@@ -3,6 +3,10 @@ import numpy as np
 from sklearn.metrics import f1_score
 import os
 
+from sklearn.metrics import confusion_matrix
+import seaborn as sns
+import matplotlib.pyplot as plt
+
 '''
 try:
     from launch_training import DEBUG_MODE
@@ -21,7 +25,7 @@ except ImportError:
 # Training functions
 # -----------------------------
 
-def train_one_epoch(model, train_loader, criterion, optimizer, scaler, device, l1_lambda=0, l2_lambda=0, debug_mode=True):
+def train_one_epoch(model, train_loader, criterion, optimizer, scaler, device, l1_lambda=0, l2_lambda=0, debug_mode=True, comet_experiment=None):
     """
     Perform one complete training epoch through the entire training dataset.
 
@@ -97,6 +101,11 @@ def train_one_epoch(model, train_loader, criterion, optimizer, scaler, device, l
         np.concatenate(all_predictions),
         average='weighted'
     )
+
+    # ... ottieni preds e labels ...
+    cm = confusion_matrix(np.concatenate(all_targets), np.concatenate(all_predictions))
+    print("Confusion Matrix:\n", cm)
+    comet_experiment.log_confusion_matrix(matrix=cm, labels=[str(i) for i in range(cm.shape[0])], name="Confusion Matrix")
 
     return epoch_loss, epoch_f1
 
@@ -213,9 +222,10 @@ def fit(model, train_loader, val_loader, epochs, criterion, optimizer, scaler, d
 
         # Forward pass through training data, compute gradients, update weights
         train_loss, train_f1 = train_one_epoch(
-            model, train_loader, criterion, optimizer, scaler, device, l1_lambda, l2_lambda, debug_mode=debug_mode
+            model, train_loader, criterion, optimizer, scaler, device, l1_lambda, l2_lambda, debug_mode=debug_mode, comet_experiment=comet_experiment
         )
-        #print_gpu_usage(f"Checkpoint {epoch}.")
+
+         #print_gpu_usage(f"Checkpoint {epoch}.")
         if debug_mode:
             print(f"Epoch {epoch} train done", flush=True)  # Debug line
 

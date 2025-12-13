@@ -95,6 +95,13 @@ class LazyImageDataset(torch.utils.data.Dataset):
         if self.transform:
             image_tensor = self.transform(image_tensor)
         
+            
+        # Subito prima del return image_tensor, label
+        if idx == 0: # Fallo solo per la prima immagine
+            print(f"Tensor Stats - Min: {image_tensor.min():.2f}, Max: {image_tensor.max():.2f}, Mean: {image_tensor.mean():.2f}")
+            # DEVE stampare valori tipo: Min: -2.1, Max: 2.6.
+            # SE stampa: Min: 0.0, Max: 255.0 -> Hai dimenticato scale=True o la normalizzazione è rotta.
+        
         # Return the image tensor and label as torch.long type
         return image_tensor, torch.tensor(label, dtype=torch.long)
 
@@ -199,7 +206,7 @@ def get_loaders(augmentation=None, batch_size=LOADER_PARAMS["batch_size"], base_
     Create train and validation dataloaders using lazy loading (no RAM overload).
     
     Returns:
-        train_loader, val_loader, input_shape
+        train_loader, val_loader, input_shape, class_weights
     """
     # Resolve paths (supports preprocessed dataset root via base_path)
     images_dir, masks_dir, csv_path = _resolve_paths(base_path, add_mask_channel, is_test=False)
@@ -235,16 +242,32 @@ def get_loaders(augmentation=None, batch_size=LOADER_PARAMS["batch_size"], base_
     # Compute the counts of each class
     counts = np.bincount(unique_samples['label'])
 
+    # 1. Calcola i pesi basandoti su TUTTI i patch (df), non sui vetrini unici
+    all_labels = df['label'].to_numpy()
+
+    # 2. Usa la funzione di sklearn che è standard e gestisce tutto (balanced = n_samples / (n_classes * np.bincount(y)))
+    class_weights_array = compute_class_weight(
+        class_weight='balanced',
+        classes=np.unique(all_labels),
+        y=all_labels
+    )
+
+    # 3. Converti in tensore per PyTorch
+    # N.B. Assicurati che sia float32
+    class_weights = torch.tensor(class_weights_array, dtype=torch.float32)
+
+    print("Class Weights calcolati (sui patch):", class_weights)
+
     # Calculate weights using a logaritmich scale
     # log1p è log(1+x), che gestisce conteggi molto piccoli in modo stabile
-    class_weights = 1.0 / np.log1p(counts)
-
-    # Normalize weights
-    class_weights = class_weights / np.sum(class_weights) * len(counts)
-    
-    sample_weight = train_df['weight'].to_numpy()
-    
-    sampler = WeightedRandomSampler(sample_weight, num_samples=len(sample_weight))
+    #class_weights = 1.0 / np.log1p(counts)
+#
+    ## Normalize weights
+    #class_weights = class_weights / np.sum(class_weights) * len(counts)
+    #
+    #sample_weight = train_df['weight'].to_numpy()
+    #
+    #sampler = WeightedRandomSampler(sample_weight, num_samples=len(sample_weight))
     
     # Determine shape depending on whether masks are appended
     if add_mask_channel:
@@ -295,7 +318,7 @@ def get_loaders(augmentation=None, batch_size=LOADER_PARAMS["batch_size"], base_
     print(f"Input shape: {input_shape}")
     
     # Return dataloaders and input shape
-    return train_loader, val_loader, input_shape
+    return train_loader, val_loader, input_shape, class_weights
 
 
 def get_test_loaders(add_mask_channel=False, batch_size=LOADER_PARAMS["batch_size"], base_path=None):
