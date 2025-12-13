@@ -19,91 +19,98 @@ LOADER_PARAMS = config.LOADER_PARAMS
 class LazyImageDataset(torch.utils.data.Dataset):
     """
     Memory-efficient Dataset that loads images from disk on-demand.
-    
-    Args:
-        csv_df (pd.DataFrame): DataFrame with 'sample_index' and 'label' columns
-        images_dir (Path): Directory containing image files
-        masks_dir (Path, optional): Directory containing mask files (same names as images).
-        add_mask_channel (bool): If True, appends mask as 4th channel to the image.
-        transform (callable, optional): Transforms to apply
     """
     def __init__(self, csv_df, images_dir, masks_dir=None, add_mask_channel=False, transform=None):
         # Copy of dataset annotation CSV; reset index for proper indexing
         self.csv_df = csv_df.reset_index(drop=True)
-        # Directory containing images
         self.images_dir = Path(images_dir)
-        # Optional directory containing masks
         self.masks_dir = Path(masks_dir) if masks_dir else None
-        # Whether to append mask as 4th image channel
         self.add_mask_channel = add_mask_channel
-        # Optional augmentations or preprocessing transforms
         self.transform = transform
         
-        # Base transform always used (convert image to tensor)
-        self.to_tensor = transforms.Compose([
-            transforms.ToImage(),                                 # Convert PIL/numpy to Torch tensor
-            transforms.ToDtype(torch.float32, scale=True)         # Convert dtype and scale to [0,1]
-        ])
-    
+        # 1. Definizione statistiche Normalizzazione
+        # Se abbiamo 4 canali, dobbiamo avere 4 medie e 4 deviazioni standard
+        if self.add_mask_channel:
+            # RGB (ImageNet) + Mask (Mean 0.5 per centrarla)
+            self.mean = [0.485, 0.456, 0.406, 0.5]
+            self.std  = [0.229, 0.224, 0.225, 0.5]
+        else:
+            # Solo RGB Standard
+            self.mean = [0.485, 0.456, 0.406]
+            self.std  = [0.229, 0.224, 0.225]
+
+        # 2. Base transform: Solo conversione in Tensore (0-1)
+        # N.B. ToTensor converte automaticamente (H,W,C) in (C,H,W) e scala [0,255] -> [0,1]
+        self.to_tensor_base = transforms.ToTensor()
+
+        # 3. Normalizzazione finale (Da applicare DOPO le augmentation)
+        self.normalize = transforms.Normalize(mean=self.mean, std=self.std)
+
     def __len__(self):
-        # Total number of samples (rows in CSV)
         return len(self.csv_df)
     
     def __getitem__(self, idx):
-        # Load a specific sample's metadata from the CSV
         row = self.csv_df.iloc[idx]
-        # Column 'sample_index' contains filename
         img_name = row['sample_index']
-        # Column 'label' contains class index
         label = row['label']
         
-        # Build full path to image on disk and read with OpenCV
+        # --- CARICAMENTO ---
         img_path = self.images_dir / img_name
         image = cv2.imread(str(img_path))
         
-        # If OpenCV failed to load the image, raise error
         if image is None:
             raise FileNotFoundError(f"Could not load {img_path}")
         
-        # Convert image format from BGR (OpenCV default) to RGB
+        # Convert BGR to RGB
         image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
 
-        # If mask channel is enabled, load and concatenate the mask
+        # --- GESTIONE MASCHERA (Opzionale) ---
         if self.add_mask_channel:
-            # Check masks_dir exists when needed
             if self.masks_dir is None:
                 raise ValueError("masks_dir must be provided when add_mask_channel=True")
-            # Build full path to mask and load
-            mask_path = self.masks_dir / img_name
-            mask = cv2.imread(str(mask_path), cv2.IMREAD_GRAYSCALE)  # Read mask in grayscale
             
-            # Error if mask file is missing
+            mask_path = self.masks_dir / img_name
+            mask = cv2.imread(str(mask_path), cv2.IMREAD_GRAYSCALE)
+            
             if mask is None:
                 raise FileNotFoundError(f"Could not load mask {mask_path}")
-            # Resize mask if spatial dimensions differ from image
+            
+            # Resize mask se necessario
             if mask.shape[:2] != image.shape[:2]:
                 mask = cv2.resize(mask, (image.shape[1], image.shape[0]), interpolation=cv2.INTER_NEAREST)
-            # Stack mask as 4th channel (RGB + Mask → 4 channels)
+            
+            # Stack: L'immagine diventa a 4 canali (H, W, 4)
             image = np.dstack((image, mask))
         
-        # Convert numpy array to PIL Image (required for torchvision v2 transforms)
-        image_pil = Image.fromarray(image)
+        # --- CHECK IMMAGINI NERE/VUOTE (Debug) ---
+        # Se la media dei pixel è quasi 0, il patch è vuoto o corrotto
+        if np.mean(image) < 1.0: 
+            print(f"⚠️ WARNING: Patch quasi tutto nero rilevato! {img_name} (Mean: {np.mean(image):.2f})")
+
+        # --- PIPELINE TRASFORMAZIONI ---
         
-        # Convert PIL image into normalized torch tensor
-        image_tensor = self.to_tensor(image_pil)
+        # 1. Converti Numpy -> Tensor. Range diventa [0.0, 1.0]
+        image_tensor = self.to_tensor_base(image)
         
-        # Apply augmentations if provided (only applied to training)
+        # 2. Applica Augmentations (Se presenti)
+        # Le augmentation (es. ColorJitter) si aspettano range [0, 1]
         if self.transform:
             image_tensor = self.transform(image_tensor)
-        
             
-        # Subito prima del return image_tensor, label
-        if idx == 0: # Fallo solo per la prima immagine
-            print(f"Tensor Stats - Min: {image_tensor.min():.2f}, Max: {image_tensor.max():.2f}, Mean: {image_tensor.mean():.2f}")
-            # DEVE stampare valori tipo: Min: -2.1, Max: 2.6.
-            # SE stampa: Min: 0.0, Max: 255.0 -> Hai dimenticato scale=True o la normalizzazione è rotta.
+        # 3. Applica Normalizzazione (ULTIMO STEP)
+        # Ora il range diventa [-2.x, +2.x]
+        image_tensor = self.normalize(image_tensor)
         
-        # Return the image tensor and label as torch.long type
+        # --- DEBUG PRINT (Solo prima immagine) ---
+        if idx == 0:
+            print(f"Tensor Stats for {img_name}:")
+            print(f"   Min: {image_tensor.min():.2f} (Deve essere negativo, es. -2.11)")
+            print(f"   Max: {image_tensor.max():.2f} (Deve essere positivo, es. 2.6)")
+            print(f"   Mean: {image_tensor.mean():.2f} (Dovrebbe essere vicino a 0)")
+            
+            # Se Min è 0.00 qui, significa che l'immagine di input era 0.485 esatto (impossibile) 
+            # o la normalizzazione non è partita.
+        
         return image_tensor, torch.tensor(label, dtype=torch.long)
 
 
@@ -144,7 +151,7 @@ class TestImageDataset(torch.utils.data.Dataset):
                 mask = cv2.resize(mask, (image.shape[1], image.shape[0]), interpolation=cv2.INTER_NEAREST)
             image = np.dstack((image, mask))
 
-        image_tensor = self.to_tensor(Image.fromarray(image))
+        image_tensor = self.to_tensor(image)
 
         return image_tensor, img_name
 
