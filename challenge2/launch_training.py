@@ -76,12 +76,16 @@ def get_criterion_from_name(criterion_name):
         return nn.CrossEntropyLoss()
 
 def get_optimizer_and_scaler(optimizer_name, model, learning_rate, l2_lambda, device_obj):
+    # --- FILTRO PARAMETRI (NUOVO STEP) ---
+    # Seleziona solo i parametri che devono essere addestrati (requires_grad=True)
+    trainable_params = filter(lambda p: p.requires_grad, model.parameters())
+    
     # Define optimizer with L2 regularization
     if optimizer_name == "adamw":
-        optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate, weight_decay=l2_lambda)
+        optimizer = torch.optim.AdamW(trainable_params, lr=learning_rate, weight_decay=l2_lambda)
     else :
         print("ERR! Optimizer not recognized. Using AdamW as default.")
-        optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate, weight_decay=l2_lambda)
+        optimizer = torch.optim.AdamW(trainable_params, lr=learning_rate, weight_decay=l2_lambda)
 
     # Enable mixed precision training for GPU acceleration
     scaler = torch.amp.GradScaler(enabled=(device_obj.type == 'cuda'))

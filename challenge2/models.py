@@ -258,7 +258,7 @@ class EfficientNetModel(nn.Module):
 
 
 class HistologyResNet(nn.Module):
-    def __init__(self, num_classes=4, use_pretrained=True, backbone='resnet18', input_channels=4, dropout_rate=0.3):
+    def __init__(self, num_classes=4, use_pretrained=True, backbone='resnet18', input_channels=4, dropout_rate=0.3, freeze_backbone=False):
         """
         Modello basato su ResNet con supporto a 3 o 4 canali.
         Usa i pesi pre-addestrati di ImageNet per i canali RGB e inizializza
@@ -277,6 +277,14 @@ class HistologyResNet(nn.Module):
         else:
             raise ValueError("Backbone supportata: resnet18, resnet50")
 
+        # --- FREEZING (NUOVO STEP) ---
+        # Lo facciamo SUBITO DOPO aver caricato il modello base, ma PRIMA delle "chirurgie".
+        # In questo modo congeliamo tutto ciò che è pre-addestrato.
+        if freeze_backbone:
+            for param in self.model.parameters():
+                param.requires_grad = False
+            print(f"Backbone '{backbone}' freezed (fixed weights).")
+            
         # ---------------------------------------------------------
         # 2. CHIRURGIA DEL PRIMO LIVELLO (Input Layer Surgery)
         # ---------------------------------------------------------
@@ -312,7 +320,7 @@ class HistologyResNet(nn.Module):
         # ---------------------------------------------------------
         # Sostituiamo l'ultimo layer fully connected per matchare le nostre classi
         self.model.fc = nn.Sequential(
-            nn.Dropout(p=dropout_rate), # Aggiungiamo un po' di dropout per evitare overfitting
+            nn.Dropout(p=dropout_rate),
             nn.Linear(last_channel_in, num_classes)
         )
 

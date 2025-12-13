@@ -57,7 +57,8 @@ RESNET_DEFAULTS = {
     "use_pretrained": True,
     "backbone": "resnet18",
     "input_channels": 3,  # default expects RGB + mask; override to 3 when training on RGB-only tiles
-    "dropout_rate": 0.3
+    "dropout_rate": 0.5,
+    "freeze_backbone": True
 }
 
 
