@@ -62,6 +62,12 @@ RESNET_DEFAULTS = {
     "freeze_backbone": True
 }
 
+PRETRAINED_EFFICIENTNET_DEFAULTS = {
+        "input_shape": (3, 224, 224),
+        "num_classes": 4,
+        "freeze_backbone": True,
+        "dropout_rate": 0.5
+}
 
 # 5. DIRECTORIES
 BASE_FOLDER = Path("./") # path for colab

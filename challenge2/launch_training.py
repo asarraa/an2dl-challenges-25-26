@@ -166,7 +166,9 @@ def start_training(model_name="CNN", model_params=None, training_params=None, de
                 "use_pretrained": True, 
                 "backbone": "resnet18"
             }
-            
+    elif model_name == "PretrainedEfficientNet":
+        current_model_cfg = config.PRETRAINED_EFFICIENTNET_DEFAULTS.copy()
+        
     # Update with whatever you passed in (if anything)
     if training_params:
         current_train_cfg.update(training_params)
