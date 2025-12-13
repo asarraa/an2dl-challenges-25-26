@@ -198,14 +198,14 @@ def start_training(model_name="CNN", model_params=None, training_params=None, de
     
     comet_experiment.set_name(run_id)
 
-    hyper_params = {
-      "learning_rate": current_train_cfg['learning_rate'],
-      "batch_size": config.LOADER_PARAMS['batch_size'],
-      "epochs": current_train_cfg['epochs'],
-      "model": model_name,
-    }
+    # hyper_params = {
+    #   "learning_rate": current_train_cfg['learning_rate'],
+    #   "batch_size": config.LOADER_PARAMS['batch_size'],
+    #   "epochs": current_train_cfg['epochs'],
+    #   "model": model_name,
+    # }
 
-    comet_experiment.log_parameters(hyper_params)
+    comet_experiment.log_parameters(current_train_cfg)
     comet_experiment.log_parameters(current_model_cfg)
     #data_input_shape =  data_input_shape
 
