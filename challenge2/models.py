@@ -3,6 +3,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import config
 import torchvision.models as models
+from models import efficientnet_b0, EfficientNet_B0_Weights
 
 
 # -----------------------------
@@ -441,3 +442,31 @@ class CNNCustom(nn.Module):
         x = self.features(x)
         x = self.classifier_head(x)
         return x
+    
+class PretrainedEfficientNet(nn.Module):
+    def __init__(self, num_classes=4, freeze_backbone=False, dropout_rate=0.5):
+        super().__init__()
+        
+        # 1. Carica il modello pre-addestrato ufficiale
+        # "DEFAULT" scarica i pesi migliori disponibili su ImageNet
+        weights = EfficientNet_B0_Weights.DEFAULT
+        self.model = efficientnet_b0(weights=weights)
+        
+        # 2. Freezing (Opzionale ma raccomandato all'inizio)
+        if freeze_backbone:
+            for param in self.model.features.parameters():
+                param.requires_grad = False
+            print("🔒 Backbone EfficientNet congelato.")
+            
+        # 3. Sostituzione della testa (Classifier)
+        # In EfficientNet, il classificatore si chiama 'classifier' ed è un Sequential.
+        # L'ultimo layer lineare è classifier[1].
+        in_features = self.model.classifier[1].in_features
+        
+        self.model.classifier = nn.Sequential(
+            nn.Dropout(p=dropout_rate),
+            nn.Linear(in_features, num_classes)
+        )
+
+    def forward(self, x):
+        return self.model(x)
