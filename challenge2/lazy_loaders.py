@@ -310,8 +310,8 @@ def get_loaders(augmentation=None, batch_size=LOADER_PARAMS["batch_size"], base_
     val_ds = LazyImageDataset(val_df, images_dir, masks_dir=masks_dir, add_mask_channel=add_mask_channel, transform=None)
     
     # Create DataLoaders for training and validation
-    train_loader = make_loader(train_ds, batch_size=batch_size, sampler=sampler, drop_last=False)
-    val_loader = make_loader(val_ds, batch_size=batch_size, shuffle=True, drop_last=False)
+    train_loader = make_loader(train_ds, batch_size=batch_size, shuffle=True, sampler=None, drop_last=False)
+    val_loader = make_loader(val_ds, batch_size=batch_size, shuffle=False, sampler=None, drop_last=False)
     
     # Print dataset statistics
     print(f"Train samples: {len(train_ds)}, Val samples: {len(val_ds)}")
