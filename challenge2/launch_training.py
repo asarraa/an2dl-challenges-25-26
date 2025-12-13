@@ -72,7 +72,7 @@ def instantiate_model(model_name, current_model_cfg, data_input_shape, device_ob
     #model_graph.visual_graph
     return model
 
-def get_criterion_from_name(criterion_name):
+def get_criterion_from_name(criterion_name, class_weights, device):
 # Default to CrossEntropy if name matches or if generic "crossentropy" is used
     if criterion_name == "CrossEntropyLoss" or criterion_name == "crossentropy":
         return nn.CrossEntropyLoss(weight=class_weights.to(device))
@@ -224,7 +224,7 @@ def start_training(model_name="CNN", model_params=None, training_params=None, de
     
     #model = model.to(device_obj) 
     # Get criterion
-    criterion = get_criterion_from_name(current_train_cfg['criterion_name'])  
+    criterion = get_criterion_from_name(current_train_cfg['criterion_name'], class_weights, device_obj)
 
     optimizer, scaler = get_optimizer_and_scaler(current_train_cfg['optimizer_name'], model, current_train_cfg['learning_rate'], current_train_cfg['l2_lambda'], device_obj)
 
