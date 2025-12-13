@@ -147,11 +147,11 @@ def start_training(model_name="CNN", model_params=None, training_params=None, de
     # A. Prepare Training Config
     # Start with defaults from config.py
     current_train_cfg = config.TRAINING_DEFAULTS.copy()
-
+    current_model_cfg = {}
     # B. Prepare Model Config
     if model_name == "CNN":
         current_model_cfg = config.CNN_DEFAULTS.copy()
-    if model_name == "CNNCustom":
+    elif model_name == "CNNCustom":
         current_model_cfg = config.CNN_DEFAULTS.copy()
     elif model_name == "EfficientNet":
         current_model_cfg = config.EFFICIENTNET_DEFAULTS.copy()
