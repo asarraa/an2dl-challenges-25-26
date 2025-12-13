@@ -147,9 +147,6 @@ def start_training(model_name="CNN", model_params=None, training_params=None, de
     # A. Prepare Training Config
     # Start with defaults from config.py
     current_train_cfg = config.TRAINING_DEFAULTS.copy()
-    # Update with whatever you passed in (if anything)
-    if training_params:
-        current_train_cfg.update(training_params)
 
     # B. Prepare Model Config
     if model_name == "CNN":
@@ -169,6 +166,10 @@ def start_training(model_name="CNN", model_params=None, training_params=None, de
                 "use_pretrained": True, 
                 "backbone": "resnet18"
             }
+            
+    # Update with whatever you passed in (if anything)
+    if training_params:
+        current_train_cfg.update(training_params)
     # Update with model overrides
     if model_params:
         current_model_cfg.update(model_params)
