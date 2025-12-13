@@ -59,11 +59,10 @@ def instantiate_model(model_name, current_model_cfg, data_input_shape, device_ob
         model = models.HistologyResNet(**cfg_copy)
         
     elif model_name == "PretrainedEfficientNet":
-        model = models.PretrainedEfficientNet(
-            num_classes=current_model_cfg.get('num_classes', 4),
-            freeze_backbone=current_model_cfg.get('freeze_backbone', True),
-            dropout_rate=current_model_cfg.get('dropout_rate', 0.5)
-        )
+        cfg_copy = current_model_cfg.copy()
+        if 'input_shape' in cfg_copy:
+            del cfg_copy['input_shape']
+        model = models.PretrainedEfficientNet(**cfg_copy)
     # Move model to device BEFORE calling summary (torchsummary requires this)
     model = model.to(device_obj)
 
