@@ -177,6 +177,8 @@ def start_training(model_name="CNN", model_params=None, training_params=None, de
     
     # Override input_shape with the actual data shape passed as parameter
     if data_input_shape is not None:
+        print("Checkpoint")
+        print(f"✓ Original input_shape in config: {current_model_cfg.get('input_shape', 'Not set')}")
         current_model_cfg['input_shape'] = data_input_shape
         print(f"✓ Updated input_shape to: {data_input_shape}")
 
