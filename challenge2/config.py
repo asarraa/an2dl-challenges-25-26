@@ -42,12 +42,13 @@ CNN_DEFAULTS = {
 
 # 3. EFFICIENTNET CONFIGURATION
 EFFICIENTNET_DEFAULTS = {
-    "input_shape": (3, 32, 32),
+    "input_shape": (3, 224, 224),
     "num_classes": 4,      # same as "output_shape"
     "filters": 32,
     "kernel_size": 3,
     "stack": 2,            
-    "blocks": 2
+    "blocks": 4,
+    "freeze_backbone": False
 }
 
 # 4. RESNET CONFIGURATION

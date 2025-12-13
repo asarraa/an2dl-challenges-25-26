@@ -202,7 +202,7 @@ class EfficientNetModel(nn.Module):
 
     This model integrates the EfficientNet architecture for classification tasks.
     """
-    def __init__(self, input_shape, num_classes, filters=32, kernel_size=3, stack=2, blocks=3):
+    def __init__(self, input_shape, num_classes, filters=32, kernel_size=3, stack=2, blocks=3, freeze_backbone=False):
         """Initialises the EfficientNetModel.
 
         Args:
@@ -235,6 +235,21 @@ class EfficientNetModel(nn.Module):
             current_channels = current_filters
             current_filters *= 2
 
+        # 2. FREEZING (Congelamento)
+        # ---------------------------------------------
+        # Lo facciamo PRIMA di definire i layer finali, così siamo sicuri
+        # di congelare solo ciò che c'è "prima".
+        if freeze_backbone:
+            # Congela il layer iniziale
+            for param in self.init_conv.parameters():
+                param.requires_grad = False
+            
+            # Congela tutti i blocchi MBConv
+            for param in self.blocks_list.parameters():
+                param.requires_grad = False
+            
+            print("🔒 EfficientNet Backbone congelato (pesi fissati).")
+        
         self.gap = nn.AdaptiveAvgPool2d(1) # Global Average Pooling
         self.flatten = nn.Flatten() # Flatten multi-dimensional output
         self.dense = nn.Linear(current_channels, num_classes) # Final fully connected layer
@@ -254,7 +269,8 @@ class EfficientNetModel(nn.Module):
         x = self.gap(x)
         x = self.flatten(x)
         x = self.dense(x)
-        return F.softmax(x, dim=1)
+        return x
+        #return F.softmax(x, dim=1)
 
 
 class HistologyResNet(nn.Module):
