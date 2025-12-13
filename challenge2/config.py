@@ -63,10 +63,10 @@ RESNET_DEFAULTS = {
 }
 
 PRETRAINED_EFFICIENTNET_DEFAULTS = {
-        "input_shape": (3, 224, 224),
-        "num_classes": 4,
-        "freeze_backbone": True,
-        "dropout_rate": 0.5
+    "input_shape": (3, 224, 224),
+    "num_classes": 4,
+    "freeze_backbone": True,
+    "dropout_rate": 0.5
 }
 
 # 5. DIRECTORIES
