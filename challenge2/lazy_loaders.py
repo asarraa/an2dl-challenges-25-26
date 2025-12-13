@@ -260,11 +260,23 @@ def get_loaders(augmentation=None, batch_size=LOADER_PARAMS["batch_size"], base_
     # Define default training augmentations if none passed by user
     if augmentation is None:
         train_augmentation = transforms.Compose([
-            transforms.RandomHorizontalFlip(p=0.5),                                   # 50% chance of horizontal flip
-            transforms.RandomVerticalFlip(p=0.5),                                     # 50% chance of vertical flip
-            transforms.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2),     # Random color perturbations
-            transforms.RandomAffine(degrees=15, translate=(0.1, 0.1), scale=(0.9, 1.1)) # Random rotations/scaling
-        ])
+            transforms.RandomHorizontalFlip(p=0.5),
+            transforms.RandomVerticalFlip(p=0.5),
+            
+            # 1. AGGRESSIVE COLOR JITTER (Make it color-blind)
+            # This forces the model to ignore stain intensity
+            transforms.ColorJitter(brightness=0.3, contrast=0.3, saturation=0.3, hue=0.1),
+            
+            # 2. GRAYSCALE (Randomly remove color entirely)
+            # This forces the model to look at shapes 20% of the time
+            transforms.RandomGrayscale(p=0.2),
+            
+            # 3. GAUSSIAN BLUR (Simulate out-of-focus)
+            transforms.RandomApply([transforms.GaussianBlur(kernel_size=3)], p=0.1),
+            
+            transforms.RandomResizedCrop(size=(224, 224), scale=(0.8, 1.0)),
+            transforms.RandomRotation(degrees=90),
+            ])
     else:
         # Use custom augmentations if provided
         train_augmentation = augmentation
