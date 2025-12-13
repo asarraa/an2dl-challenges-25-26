@@ -3,7 +3,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import config
 import torchvision.models as models
-from models import efficientnet_b0, EfficientNet_B0_Weights
+from torchvision.models import efficientnet_b0, EfficientNet_B0_Weights
 
 
 # -----------------------------
