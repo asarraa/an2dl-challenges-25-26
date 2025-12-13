@@ -60,9 +60,9 @@ def instantiate_model(model_name, current_model_cfg, data_input_shape, device_ob
         
     elif model_name == "PretrainedEfficientNet":
         model = models.PretrainedEfficientNet(
-            num_classes=4,
+            num_classes=current_model_cfg.get('num_classes', 4),
             freeze_backbone=current_model_cfg.get('freeze_backbone', True),
-            dropout_rate=0.5
+            dropout_rate=current_model_cfg.get('dropout_rate', 0.5)
         )
     # Move model to device BEFORE calling summary (torchsummary requires this)
     model = model.to(device_obj)
