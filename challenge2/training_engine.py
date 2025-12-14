@@ -104,7 +104,8 @@ def train_one_epoch(model, train_loader, criterion, optimizer, scaler, device, l
 
     # ... ottieni preds e labels ...
     cm = confusion_matrix(np.concatenate(all_targets), np.concatenate(all_predictions))
-    print("Confusion Matrix:\n", cm)
+    if debug_mode:
+        print("Confusion Matrix:\n", cm)
     comet_experiment.log_confusion_matrix(matrix=cm, labels=[str(i) for i in range(cm.shape[0])], name="Confusion Matrix")
 
     return epoch_loss, epoch_f1

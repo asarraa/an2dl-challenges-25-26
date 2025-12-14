@@ -194,7 +194,7 @@ def _resolve_paths(base_path, add_mask_channel=False, is_test=False):
     return images_dir, masks_dir, csv_path
 
 def get_loaders(augmentation=None, batch_size=LOADER_PARAMS["batch_size"], base_path=None, add_mask_channel=False):
-    images_dir, masks_dir, csv_path = _resolve_paths(base_path, add_mask_channel, is_test=False)
+    images_dir, masks_dir, csv_path = _resolve_paths(base_path, add_mask_channel, is_test=False, use_sampler=False)
     
     df = pd.read_csv(csv_path)
     df['label'] = df['label'].map(config.LABEL_MAP)
@@ -226,6 +226,22 @@ def get_loaders(augmentation=None, batch_size=LOADER_PARAMS["batch_size"], base_
     class_weights = torch.tensor(class_weights_array, dtype=torch.float32)
     print("Class Weights calcolati (sui patch):", class_weights)
     
+    if use_sampler:
+        # 1. Calcola i pesi per ogni CAMPIONE (non solo per classe)
+        targets = train_loader.dataset.targets # Assumendo che sia una lista/array
+        class_counts = torch.bincount(torch.tensor(targets))
+        class_weights = 1. / class_counts.float()
+
+        # Assegna a ogni immagine il peso della sua classe
+        sample_weights = [class_weights[t] for t in targets]
+        sample_weights = torch.tensor(sample_weights)
+
+        # 2. Crea il Sampler
+        sampler = WeightedRandomSampler(
+            weights=sample_weights,
+            num_samples=len(sample_weights),
+            replacement=True # Fondamentale: permette di ripescare le classi rare
+        )
     # Input Shape Logic
     if add_mask_channel:
         sample_mask = cv2.imread(str(masks_dir / df.iloc[0]['sample_index']), cv2.IMREAD_GRAYSCALE)
@@ -252,7 +268,10 @@ def get_loaders(augmentation=None, batch_size=LOADER_PARAMS["batch_size"], base_
     train_ds = LazyImageDataset(train_df, images_dir, masks_dir=masks_dir, add_mask_channel=add_mask_channel, transform=train_augmentation)
     val_ds = LazyImageDataset(val_df, images_dir, masks_dir=masks_dir, add_mask_channel=add_mask_channel, transform=None)
     
-    train_loader = make_loader(train_ds, batch_size=batch_size, shuffle=True, sampler=None, drop_last=False)
+    if use_sampler:
+        train_loader = make_loader(train_ds, batch_size=batch_size, shuffle=False, sampler=sampler, drop_last=False)
+    else:
+        train_loader = make_loader(train_ds, batch_size=batch_size, shuffle=True, sampler=None, drop_last=False)
     val_loader = make_loader(val_ds, batch_size=batch_size, shuffle=False, sampler=None, drop_last=False)
     
     print(f"Train samples: {len(train_ds)}, Val samples: {len(val_ds)}")
