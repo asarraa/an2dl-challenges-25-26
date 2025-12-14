@@ -227,13 +227,27 @@ def get_loaders(augmentation=None, batch_size=LOADER_PARAMS["batch_size"], base_
     print("Class Weights calcolati (sui patch):", class_weights)
     
     if use_sampler:
-        sample_weights = [class_weights[label] for label in all_labels]
-
-        # 2. Crea il Sampler
+        train_labels = train_df['label'].to_numpy()
+        
+        # B. Calcola pesi delle classi basandoti solo sul training (più sicuro)
+        class_weights_array = compute_class_weight(
+            class_weight='balanced',
+            classes=np.unique(train_labels),
+            y=train_labels
+        )
+        # Converti in tensore (utile per verifica, non critico per il sampler che vuole lista)
+        class_weights_tensor = torch.tensor(class_weights_array, dtype=torch.float32)
+        print("   Class Weights:", class_weights_tensor)
+        
+        # C. Assegna il peso a ogni singolo campione del TRAIN
+        #    IMPORTANTE: Usiamo train_labels, non all_labels!
+        sample_weights = [class_weights_tensor[label] for label in train_labels]
+        
+        # D. Crea il Sampler
         sampler = WeightedRandomSampler(
             weights=sample_weights,
             num_samples=len(sample_weights),
-            replacement=True # Fondamentale: permette di ripescare le classi rare
+            replacement=True
         )
     # Input Shape Logic
     if add_mask_channel:
