@@ -72,9 +72,11 @@ def instantiate_model(model_name, current_model_cfg, data_input_shape, device_ob
     #model_graph.visual_graph
     return model
 
-def get_criterion_from_name(criterion_name, class_weights, device):
+def get_criterion_from_name(criterion_name, device, class_weights=None):
 # Default to CrossEntropy if name matches or if generic "crossentropy" is used
     if criterion_name == "CrossEntropyLoss" or criterion_name == "crossentropy":
+        if class_weights is None:
+            return nn.CrossEntropyLoss()
         return nn.CrossEntropyLoss(weight=class_weights.to(device))
     else:
         print(f"Warning: Criterion '{criterion_name}' not found. Using CrossEntropyLoss.")
