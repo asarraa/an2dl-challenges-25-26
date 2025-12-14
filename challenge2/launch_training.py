@@ -77,7 +77,8 @@ def get_criterion_from_name(criterion_name, device, class_weights=None):
     if criterion_name == "CrossEntropyLoss" or criterion_name == "crossentropy":
         if class_weights is None:
             return nn.CrossEntropyLoss()
-        return nn.CrossEntropyLoss(weight=class_weights.to(device))
+        else:
+            return nn.CrossEntropyLoss(weight=class_weights.to(device))
     else:
         print(f"Warning: Criterion '{criterion_name}' not found. Using CrossEntropyLoss.")
         return nn.CrossEntropyLoss(weight=class_weights.to(device))
@@ -98,7 +99,7 @@ def get_optimizer_and_scaler(optimizer_name, model, learning_rate, l2_lambda, de
     scaler = torch.amp.GradScaler(enabled=(device_obj.type == 'cuda'))
     return optimizer, scaler
 
-def start_training(model_name="CNN", model_params=None, training_params=None, device=None, train_loader=None, val_loader=None, data_input_shape=None, debug_mode=False, class_weights_loss_function=None, local_data_path=None, class_weights=None):
+def start_training(model_name="CNN", model_params=None, training_params=None, device=None, train_loader=None, val_loader=None, data_input_shape=None, debug_mode=False, local_data_path=None, class_weights=None):
     """
     Args:
         model_name (str): "CNN" or "EfficientNet"
@@ -226,7 +227,7 @@ def start_training(model_name="CNN", model_params=None, training_params=None, de
     
     #model = model.to(device_obj) 
     # Get criterion
-    criterion = get_criterion_from_name(current_train_cfg['criterion_name'], class_weights, device_obj)
+    criterion = get_criterion_from_name(current_train_cfg['criterion_name'], device_obj, class_weights)
 
     optimizer, scaler = get_optimizer_and_scaler(current_train_cfg['optimizer_name'], model, current_train_cfg['learning_rate'], current_train_cfg['l2_lambda'], device_obj)
 
