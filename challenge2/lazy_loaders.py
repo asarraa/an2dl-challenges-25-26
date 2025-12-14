@@ -193,8 +193,8 @@ def _resolve_paths(base_path, add_mask_channel=False, is_test=False):
         csv_path = split_dir / split / csv_name
     return images_dir, masks_dir, csv_path
 
-def get_loaders(augmentation=None, batch_size=LOADER_PARAMS["batch_size"], base_path=None, add_mask_channel=False):
-    images_dir, masks_dir, csv_path = _resolve_paths(base_path, add_mask_channel, is_test=False, use_sampler=False)
+def get_loaders(augmentation=None, batch_size=LOADER_PARAMS["batch_size"], base_path=None, add_mask_channel=False, use_sampler=False):
+    images_dir, masks_dir, csv_path = _resolve_paths(base_path, add_mask_channel, is_test=False)
     
     df = pd.read_csv(csv_path)
     df['label'] = df['label'].map(config.LABEL_MAP)
@@ -227,14 +227,7 @@ def get_loaders(augmentation=None, batch_size=LOADER_PARAMS["batch_size"], base_
     print("Class Weights calcolati (sui patch):", class_weights)
     
     if use_sampler:
-        # 1. Calcola i pesi per ogni CAMPIONE (non solo per classe)
-        targets = train_loader.dataset.targets # Assumendo che sia una lista/array
-        class_counts = torch.bincount(torch.tensor(targets))
-        class_weights = 1. / class_counts.float()
-
-        # Assegna a ogni immagine il peso della sua classe
-        sample_weights = [class_weights[t] for t in targets]
-        sample_weights = torch.tensor(sample_weights)
+        sample_weights = [class_weights[label] for label in all_labels]
 
         # 2. Crea il Sampler
         sampler = WeightedRandomSampler(
