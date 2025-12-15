@@ -98,6 +98,9 @@ HISTOLOGY_DENSENET_DEFAULTS = {
     "freeze_backbone": True
 }
 
+
+MULTISCALE_DEFAULTS = {"num_classes": 4, "backbone_name": "resnet18", "pretrained": True, "freeze_backbones": False}
+
 # 5. DIRECTORIES
 BASE_FOLDER = Path("./") # path for colab
 BASE_DATA = BASE_FOLDER / "data"
