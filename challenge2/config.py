@@ -81,6 +81,17 @@ RESNET50_FINETUNE_DEFAULTS = {
     "global_pool": "gem",
 }
 
+RESNET18_FINETUNE_DEFAULTS = {
+    "num_classes": 4,
+    "input_channels": 3,
+    "use_pretrained": True,
+    "dropout_rate": 0.5,
+    "classifier_hidden": 256,
+    "freeze_backbone": False,
+    "freeze_until": "layer1",
+    "global_pool": "gem",
+}
+
 HISTOLOGY_DENSENET_DEFAULTS = {
     "num_classes": 4,
     "pretrained": True,

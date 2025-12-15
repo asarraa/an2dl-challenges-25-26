@@ -634,3 +634,105 @@ class HistologyDenseNet(nn.Module):
             param.requires_grad = True
             
         print("Sbloccato denseblock4, norm5 e classifier.")
+        
+class FineTunedResNet18(nn.Module):
+    """
+    Lightweight baseline for histology tiles based on a pretrained ResNet18.
+    - Less prone to overfitting on small/noisy datasets compared to ResNet50.
+    - Supports 3 or 4 channels (mask).
+    - Optional GeM pooling and partial freezing.
+    """
+
+    def __init__(
+        self,
+        num_classes=4,
+        input_channels=3,
+        use_pretrained=True,
+        dropout_rate=0.5,
+        classifier_hidden=256,
+        freeze_backbone=False,
+        freeze_until="layer1",
+        global_pool="gem",
+    ):
+        super().__init__()
+
+        # Carica pesi ResNet18
+        weights = models.ResNet18_Weights.IMAGENET1K_V1 if use_pretrained else None
+        self.backbone = models.resnet18(weights=weights)
+
+        # Adatta il primo conv per canali addizionali (es. maschera)
+        self._adapt_input_conv(input_channels)
+
+        # Sostituisci pooling e fully connected layer
+        self.in_features = self.backbone.fc.in_features # 512 per ResNet18
+        self.backbone.fc = nn.Identity()
+        
+        if global_pool.lower() == "gem":
+            self.backbone.avgpool = GeM()
+        else:
+            self.backbone.avgpool = nn.AdaptiveAvgPool2d((1, 1))
+
+        # Logica di congelamento
+        if freeze_backbone:
+            for param in self.backbone.parameters():
+                param.requires_grad = False
+        else:
+            self._freeze_until(freeze_until)
+
+        # Classificatore custom
+        self.classifier = nn.Sequential(
+            nn.Flatten(), # Assicura che l'input sia piatto
+            nn.Dropout(dropout_rate),
+            nn.Linear(self.in_features, classifier_hidden),
+            nn.ReLU(inplace=True),
+            nn.Dropout(0.25), # Secondo dropout mantenuto
+            nn.Linear(classifier_hidden, num_classes),
+        )
+
+    def _adapt_input_conv(self, input_channels: int):
+        conv1 = self.backbone.conv1
+        if input_channels == conv1.in_channels:
+            return
+
+        new_conv = nn.Conv2d(
+            in_channels=input_channels,
+            out_channels=conv1.out_channels,
+            kernel_size=conv1.kernel_size,
+            stride=conv1.stride,
+            padding=conv1.padding,
+            bias=conv1.bias,
+        )
+
+        with torch.no_grad():
+            # Copia i pesi esistenti per i primi canali
+            copy_channels = min(input_channels, conv1.in_channels)
+            new_conv.weight[:, :copy_channels, :, :] = conv1.weight[:, :copy_channels, :, :]
+
+            # Inizializza canali extra con la media dei pesi RGB
+            if input_channels > conv1.in_channels:
+                extra = input_channels - conv1.in_channels
+                mean_weight = conv1.weight.mean(dim=1, keepdim=True)
+                new_conv.weight[:, conv1.in_channels:input_channels, :, :] = mean_weight.repeat(1, extra, 1, 1)
+        
+        self.backbone.conv1 = new_conv
+
+    def _freeze_until(self, freeze_until: str):
+        freeze_order = ["conv1", "bn1", "layer1", "layer2", "layer3"]
+        if freeze_until not in freeze_order:
+            return
+
+        # Itera sui figli per congelare in ordine
+        reached_target = False
+        for name, module in self.backbone.named_children():
+            if reached_target:
+                break 
+            
+            if name in freeze_order:
+                for param in module.parameters():
+                    param.requires_grad = False
+                if name == freeze_until:
+                    reached_target = True
+
+    def forward(self, x):
+        features = self.backbone(x)
+        return self.classifier(features)
