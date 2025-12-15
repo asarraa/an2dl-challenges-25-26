@@ -7,24 +7,6 @@ from sklearn.metrics import confusion_matrix
 import seaborn as sns
 import matplotlib.pyplot as plt
 
-'''
-try:
-    from launch_training import DEBUG_MODE
-except ImportError:
-    DEBUG_MODE = False  # Fallback if imported elsewhere
-'''
-
-# def print_gpu_usage(checkpoint_name=""):
-#     if torch.cuda.is_available():
-#         allocated = torch.cuda.memory_allocated() / 1024**3  # Converte byte in GB
-#         reserved = torch.cuda.memory_reserved() / 1024**3    # Memoria riservata dalla cache di PyTorch
-#         print(f"❗ [MEMORIA] {checkpoint_name} -> Allocata: {allocated:.2f} GB | Riservata: {reserved:.2f} GB")
-#     else:
-#         print("❗ [MEMORIA] CUDA non disponibile.")
-# -----------------------------
-# Training functions
-# -----------------------------
-
 def train_one_epoch(model, train_loader, criterion, optimizer, scaler, device, l1_lambda=0, l2_lambda=0, debug_mode=True, comet_experiment=None):
     """
     Perform one complete training epoch through the entire training dataset.
@@ -58,7 +40,6 @@ def train_one_epoch(model, train_loader, criterion, optimizer, scaler, device, l
             print(f"[DEBUG] Processing first batch, shape: {inputs.shape}", flush=True)
         # Move data to device (GPU/CPU)
         inputs, targets = inputs.to(device), targets.to(device)
-        #print_gpu_usage(f"Checkpoint Train Batch {batch_idx}")
         # Clear gradients from previous step
         optimizer.zero_grad(set_to_none=True)
 
@@ -218,15 +199,11 @@ def fit(model, train_loader, val_loader, epochs, criterion, optimizer, scaler, d
         if debug_mode:
             print(f"Starting epoch {epoch}...", flush=True)  # Debug line
         
-        #print_gpu_usage(f"Checkpoint {epoch}.1")
-
-
         # Forward pass through training data, compute gradients, update weights
         train_loss, train_f1 = train_one_epoch(
             model, train_loader, criterion, optimizer, scaler, device, l1_lambda, l2_lambda, debug_mode=debug_mode, comet_experiment=comet_experiment
         )
 
-         #print_gpu_usage(f"Checkpoint {epoch}.")
         if debug_mode:
             print(f"Epoch {epoch} train done", flush=True)  # Debug line
 
@@ -234,7 +211,6 @@ def fit(model, train_loader, val_loader, epochs, criterion, optimizer, scaler, d
         val_loss, val_f1 = validate_one_epoch(
             model, val_loader, criterion, device, debug_mode=debug_mode
         )
-        #print_gpu_usage(f"Checkpoint {epoch}.2")
         # Store metrics for plotting and analysis
         training_history['train_loss'].append(train_loss)
         training_history['val_loss'].append(val_loss)

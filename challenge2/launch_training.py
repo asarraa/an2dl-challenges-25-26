@@ -1,5 +1,3 @@
-
-# 1. IMPORTS
 import os
 import torch
 import torch.nn as nn
@@ -14,20 +12,6 @@ import registry_module
 # We don't need preprocessing here because we pass data from the notebook
 from training_engine import fit 
 
-# ===== DEBUG MODE =====
-#DEBUG_MODE = True  # Set to True to enable debug prints
-
-# -----------------------------
-# Helper Functions
-# -----------------------------
-
-# def print_gpu_usage(checkpoint_name=""):
-#     if torch.cuda.is_available():
-#         allocated = torch.cuda.memory_allocated() / 1024**3  # Converte byte in GB
-#         reserved = torch.cuda.memory_reserved() / 1024**3    # Memoria riservata dalla cache di PyTorch
-#         print(f"❗ [MEMORIA] {checkpoint_name} -> Allocata: {allocated:.2f} GB | Riservata: {reserved:.2f} GB")
-#     else:
-#         print("❗ [MEMORIA] CUDA non disponibile.")
 
 class FocalLoss(nn.Module):
     def __init__(self, alpha=1, gamma=2, reduction='mean'):
@@ -149,15 +133,6 @@ def start_training(model_name="CNN", model_params=None, training_params=None, de
         model_params (dict): Dictionary of overrides for the model architecture.
         training_params (dict): Dictionary of overrides for training (lr, epochs, etc).
     """
-    # paths deleted because now ModelRegistry handles them internally (through config.py)
-    
-    # os.makedirs("models", exist_ok=True)
-    # os.makedirs("experiments", exist_ok=True)
-
-    # if not config.EXPERIMENTS_DIR.exists():
-    #     config.EXPERIMENTS_DIR.mkdir(parents=True, exist_ok=True)
-    # --- 0. INIT REGISTRY & ID (MOVED TO TOP) ---
-    # We create the ID now so Comet and Registry share it
     reg_manager = registry_module.ModelRegistry(local_data_path)
     run_id = reg_manager.generate_id(prefix=model_name)
 
@@ -184,7 +159,6 @@ def start_training(model_name="CNN", model_params=None, training_params=None, de
     else:
         print("WARNING: Using CPU (this will be slow!)", flush=True)
     print(f"--- Starting {model_name} on {device_obj} ---", flush=True)
-    #print_gpu_usage("Checkpoint 1")
     # -------------------------------------------------------
     # 1. SETUP CONFIGURATION (Merge Defaults + Overrides)
     # -------------------------------------------------------
@@ -239,7 +213,6 @@ def start_training(model_name="CNN", model_params=None, training_params=None, de
     print(f"Starting {model_name} model training...")
     print("Training Configuration:\n", train_parameters_summary)
     print("Model Configuration:\n", model_parameters_summary)
-    #print_gpu_usage("Checkpoint 2")
 
     #Initialize Comet logging
     comet_experiment = start(
@@ -250,39 +223,23 @@ def start_training(model_name="CNN", model_params=None, training_params=None, de
     
     comet_experiment.set_name(run_id)
 
-    # hyper_params = {
-    #   "learning_rate": current_train_cfg['learning_rate'],
-    #   "batch_size": config.LOADER_PARAMS['batch_size'],
-    #   "epochs": current_train_cfg['epochs'],
-    #   "model": model_name,
-    # }
-
     comet_experiment.log_parameters(current_train_cfg)
     comet_experiment.log_parameters(current_model_cfg)
-    #data_input_shape =  data_input_shape
 
     # -------------------------------------------------------
     # 2. INSTANTIATE (Using the merged configs)
     # -------------------------------------------------------
-    #print_gpu_usage("Checkpoint 3")
-
     if debug_mode:
         print("[DEBUG] About to instantiate model...", flush=True)
     # Instantiate Model
     model = instantiate_model(model_name, current_model_cfg, data_input_shape, device_obj)
     if debug_mode:
         print("[DEBUG] Model instantiated successfully", flush=True) 
-    #print_gpu_usage("Checkpoint 4")
     
-    #model = model.to(device_obj) 
     # Get criterion
     criterion = get_criterion_from_name(current_train_cfg['criterion_name'], device_obj, class_weights)
 
     optimizer, scaler = get_optimizer_and_scaler(current_train_cfg['optimizer_name'], model, current_train_cfg['learning_rate'], current_train_cfg['l2_lambda'], device_obj)
-
-    # Get data loader
-    # train_loader = train_loader
-    # val_loader = val_loader
 
     # TensorBoard
     writer = SummaryWriter(f"tensorboard/{run_id}")
@@ -303,7 +260,6 @@ def start_training(model_name="CNN", model_params=None, training_params=None, de
     # -------------------------------------------------------
     # 3. RUN TRAINING
     # -------------------------------------------------------
-    #print_gpu_usage("Checkpoint 5")
 
     if debug_mode:
         print("[DEBUG] About to call fit()...", flush=True)
