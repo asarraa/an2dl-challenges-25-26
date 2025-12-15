@@ -111,6 +111,12 @@ def load_model(
             model_cfg["num_classes"] = num_classes
             model_cfg["input_channels"] = c
             model = models.HistologyResNet(**model_cfg)
+    elif name == "FineTunedResNet50":
+        model_cfg = config.RESNET50_FINETUNE_DEFAULTS.copy()
+        model_cfg.update({k: v for k, v in cfg.items() if k in model_cfg})
+        model_cfg["num_classes"] = num_classes
+        model_cfg["input_channels"] = c
+        model = models.FineTunedResNet50(**model_cfg)
     else:
         raise ValueError(f"Unsupported model '{name}'. Use --model-name to pick a valid one.")
 
@@ -255,8 +261,8 @@ def pick_model_name(user_choice: Optional[str], ckpt: dict, state_dict: dict) ->
 
 def infer_model_from_state_dict(state_dict: dict) -> Optional[str]:
     keys = list(state_dict.keys())
+    if any(k.startswith("backbone.layer1") or k.startswith("backbone.conv1") for k in keys): return "FineTunedResNet50"
     if any(k.startswith("model.layer1") or k.startswith("model.conv1") for k in keys): return "HistologyResNet"
     if any(k.startswith("features.") for k in keys): return "CNN"
     if any("units.0" in k or "MBConvBlock" in k for k in keys): return "EfficientNet"
     return None
-

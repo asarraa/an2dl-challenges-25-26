@@ -69,6 +69,18 @@ PRETRAINED_EFFICIENTNET_DEFAULTS = {
     "dropout_rate": 0.5
 }
 
+# Stronger transfer-learning model built on ResNet50 with optional GeM pooling
+RESNET50_FINETUNE_DEFAULTS = {
+    "num_classes": 4,
+    "input_channels": 3,
+    "use_pretrained": True,
+    "dropout_rate": 0.45,
+    "classifier_hidden": 512,
+    "freeze_backbone": False,
+    "freeze_until": "layer2",
+    "global_pool": "gem",
+}
+
 # 5. DIRECTORIES
 BASE_FOLDER = Path("./") # path for colab
 BASE_DATA = BASE_FOLDER / "data"

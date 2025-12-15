@@ -63,6 +63,12 @@ def instantiate_model(model_name, current_model_cfg, data_input_shape, device_ob
         if 'input_shape' in cfg_copy:
             del cfg_copy['input_shape']
         model = models.PretrainedEfficientNet(**cfg_copy)
+        
+    elif model_name == "FineTunedResNet50":
+        cfg_copy = current_model_cfg.copy()
+        if 'input_shape' in cfg_copy:
+            del cfg_copy['input_shape']
+        model = models.FineTunedResNet50(**cfg_copy)
     # Move model to device BEFORE calling summary (torchsummary requires this)
     model = model.to(device_obj)
 
@@ -170,6 +176,8 @@ def start_training(model_name="CNN", model_params=None, training_params=None, de
             }
     elif model_name == "PretrainedEfficientNet":
         current_model_cfg = config.PRETRAINED_EFFICIENTNET_DEFAULTS.copy()
+    elif model_name == "FineTunedResNet50":
+        current_model_cfg = config.RESNET50_FINETUNE_DEFAULTS.copy()
         
     # Update with whatever you passed in (if anything)
     if training_params:
