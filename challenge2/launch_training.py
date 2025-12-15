@@ -118,7 +118,10 @@ def get_criterion_from_name(criterion_name, device, class_weights=None):
         else:
             return nn.CrossEntropyLoss(weight=class_weights.to(device),label_smoothing=0.1)
     elif criterion_name == "FocalLoss":
-        return FocalLoss(gamma=2.5)
+        if class_weights is None:
+            return FocalLoss(alpha=class_weights, gamma=2.5)
+        else:
+            return FocalLoss(gamma=2.5)
     else:
         print(f"Warning: Criterion '{criterion_name}' not found. Using CrossEntropyLoss.")
         return nn.CrossEntropyLoss(weight=class_weights.to(device))
