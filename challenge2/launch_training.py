@@ -3,8 +3,7 @@
 import os
 import torch
 import torch.nn as nn
-#from torchsummary import summary
-from torchinfo import summary
+from torchsummary import summary
 from torch.utils.tensorboard import SummaryWriter
 from comet_ml import start
 
@@ -76,6 +75,8 @@ def instantiate_model(model_name, current_model_cfg, data_input_shape, device_ob
         if 'input_shape' in cfg_copy:
             del cfg_copy['input_shape']
         model = models.HistologyDenseNet(**cfg_copy)
+        model.to(device_obj)
+        return model
     # Move model to device BEFORE calling summary (torchsummary requires this)
     model = model.to(device_obj)
 
