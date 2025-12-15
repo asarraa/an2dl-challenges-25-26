@@ -575,25 +575,37 @@ class FineTunedResNet50(nn.Module):
 
 
 class HistologyDenseNet(nn.Module):
-    def __init__(self, num_classes=4, pretrained=True, freeze_backbone=True):
+    def __init__(self, num_classes=4, input_channels=3, pretrained=True, freeze_backbone=True):
         super(HistologyDenseNet, self).__init__()
         
-        # 1. Carica la Backbone (DenseNet121 è il miglior compromesso peso/potenza)
         weights = models.DenseNet121_Weights.DEFAULT if pretrained else None
         self.model = models.densenet121(weights=weights)
         
-        # 2. Configura il Freezing Iniziale
+        # --- GESTIONE CANALI DIVERSI DA 3 (Opzionale ma utile) ---
+        # Se in futuro userai maschere (4 canali), questo codice adatterà il primo layer
+        if input_channels != 3:
+            print(f"[INFO] Modifica primo layer DenseNet per {input_channels} canali.")
+            original_conv = self.model.features.conv0
+            
+            # Crea nuova conv con N canali input, ma stessi pesi/parametri
+            self.model.features.conv0 = nn.Conv2d(
+                in_channels=input_channels,
+                out_channels=original_conv.out_channels,
+                kernel_size=original_conv.kernel_size,
+                stride=original_conv.stride,
+                padding=original_conv.padding,
+                bias=False
+            )
+            # (Nota: i pesi per i canali extra saranno inizializzati random)
+
         if freeze_backbone and pretrained:
             self._freeze_all_layers()
             
-        # 3. Sostituisci la Testa (Classifier)
-        # In DenseNet la testa si chiama 'classifier' ed è un Linear layer
-        in_features = self.model.classifier.in_features # Di solito 1024
-        
+        in_features = self.model.classifier.in_features
         self.model.classifier = nn.Sequential(
             nn.Linear(in_features, 512),
             nn.ReLU(),
-            nn.Dropout(0.3),            # Dropout leggermente più alto per DenseNet
+            nn.Dropout(0.3),
             nn.Linear(512, num_classes)
         )
 
