@@ -81,6 +81,12 @@ RESNET50_FINETUNE_DEFAULTS = {
     "global_pool": "gem",
 }
 
+HISTOLOGY_DENSENET_DEFAULTS = {
+    "num_classes": 4,
+    "pretrained": True,
+    "freeze_backbone": True
+}
+
 # 5. DIRECTORIES
 BASE_FOLDER = Path("./") # path for colab
 BASE_DATA = BASE_FOLDER / "data"

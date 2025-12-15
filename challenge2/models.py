@@ -572,3 +572,53 @@ class FineTunedResNet50(nn.Module):
     def forward(self, x):
         features = self.backbone(x)
         return self.classifier(features)
+
+
+class HistologyDenseNet(nn.Module):
+    def __init__(self, num_classes=4, pretrained=True, freeze_backbone=True):
+        super(HistologyDenseNet, self).__init__()
+        
+        # 1. Carica la Backbone (DenseNet121 è il miglior compromesso peso/potenza)
+        weights = models.DenseNet121_Weights.DEFAULT if pretrained else None
+        self.model = models.densenet121(weights=weights)
+        
+        # 2. Configura il Freezing Iniziale
+        if freeze_backbone and pretrained:
+            self._freeze_all_layers()
+            
+        # 3. Sostituisci la Testa (Classifier)
+        # In DenseNet la testa si chiama 'classifier' ed è un Linear layer
+        in_features = self.model.classifier.in_features # Di solito 1024
+        
+        self.model.classifier = nn.Sequential(
+            nn.Linear(in_features, 512),
+            nn.ReLU(),
+            nn.Dropout(0.3),            # Dropout leggermente più alto per DenseNet
+            nn.Linear(512, num_classes)
+        )
+
+    def forward(self, x):
+        return self.model(x)
+    
+    # --- Metodi Helper per il Freezing ---
+    
+    def _freeze_all_layers(self):
+        """Blocca tutta la backbone (Fase 1)"""
+        for param in self.model.features.parameters():
+            param.requires_grad = False
+        print("Backbone DenseNet bloccata.")
+
+    def unfreeze_last_block(self):
+        """Sblocca l'ultimo Dense Block per il Fine-Tuning (Fase 2)"""
+        # Sblocca la Norm finale e l'ultimo blocco denso
+        for name, param in self.model.features.named_parameters():
+            if "denseblock4" in name or "norm5" in name:
+                param.requires_grad = True
+            else:
+                param.requires_grad = False # Sicurezza
+        
+        # Assicuriamoci che il classificatore sia sempre sbloccato
+        for param in self.model.classifier.parameters():
+            param.requires_grad = True
+            
+        print("Sbloccato denseblock4, norm5 e classifier.")
