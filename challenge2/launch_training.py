@@ -29,6 +29,24 @@ from training_engine import fit
 #     else:
 #         print("❗ [MEMORIA] CUDA non disponibile.")
 
+class FocalLoss(nn.Module):
+    def __init__(self, alpha=1, gamma=2, reduction='mean'):
+        super(FocalLoss, self).__init__()
+        self.alpha = alpha
+        self.gamma = gamma
+        self.reduction = reduction
+
+    def forward(self, inputs, targets):
+        CE_loss = nn.functional.cross_entropy(inputs, targets, reduction='none')
+        pt = torch.exp(-CE_loss)
+        F_loss = self.alpha * (1-pt)**self.gamma * CE_loss
+
+        if self.reduction == 'mean':
+            return torch.mean(F_loss)
+        elif self.reduction == 'sum':
+            return torch.sum(F_loss)
+        return F_loss
+
 def get_device(cfg_device):
     if cfg_device == "cuda" and torch.cuda.is_available():
         return torch.device("cuda")
@@ -93,6 +111,8 @@ def get_criterion_from_name(criterion_name, device, class_weights=None):
             return nn.CrossEntropyLoss(label_smoothing=0.1)
         else:
             return nn.CrossEntropyLoss(weight=class_weights.to(device),label_smoothing=0.1)
+    elif criterion_name == "FocalLoss":
+        return FocalLoss(gamma=2.5)
     else:
         print(f"Warning: Criterion '{criterion_name}' not found. Using CrossEntropyLoss.")
         return nn.CrossEntropyLoss(weight=class_weights.to(device))
