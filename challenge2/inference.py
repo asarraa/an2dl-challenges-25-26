@@ -117,6 +117,12 @@ def load_model(
         model_cfg["num_classes"] = num_classes
         model_cfg["input_channels"] = c
         model = models.FineTunedResNet50(**model_cfg)
+    elif name == "HistologyDenseNet":
+        model_cfg = config.HISTOLOGY_DENSENET_DEFAULTS.copy()
+        model_cfg.update({k: v for k, v in cfg.items() if k in model_cfg})
+        model_cfg["num_classes"] = num_classes
+        model_cfg["input_channels"] = c
+        model = models.HistologyDenseNet(**model_cfg)
     else:
         raise ValueError(f"Unsupported model '{name}'. Use --model-name to pick a valid one.")
 
