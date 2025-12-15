@@ -130,9 +130,9 @@ def get_loaders(
     # --- Augmentations ---
     train_augmentation = transforms.Compose([
         transforms.Resize((224, 224)),
-        transforms.RandomHorizontalFlip(p=0.5),
-        transforms.RandomVerticalFlip(p=0.5),
-        transforms.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2, hue=0.1),
+       # transforms.RandomHorizontalFlip(p=0.5),
+       # transforms.RandomVerticalFlip(p=0.5),
+       # transforms.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2, hue=0.1),
     ])
     val_augmentation = transforms.Compose([
         transforms.Resize((224, 224)),
