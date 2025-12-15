@@ -90,9 +90,9 @@ def get_criterion_from_name(criterion_name, device, class_weights=None):
 # Default to CrossEntropy if name matches or if generic "crossentropy" is used
     if criterion_name == "CrossEntropyLoss" or criterion_name == "crossentropy":
         if class_weights is None:
-            return nn.CrossEntropyLoss()
+            return nn.CrossEntropyLoss(label_smoothing=0.1)
         else:
-            return nn.CrossEntropyLoss(weight=class_weights.to(device))
+            return nn.CrossEntropyLoss(weight=class_weights.to(device),label_smoothing=0.1)
     else:
         print(f"Warning: Criterion '{criterion_name}' not found. Using CrossEntropyLoss.")
         return nn.CrossEntropyLoss(weight=class_weights.to(device))
