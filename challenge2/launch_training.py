@@ -3,7 +3,8 @@
 import os
 import torch
 import torch.nn as nn
-from torchsummary import summary
+#from torchsummary import summary
+from torchinfo import summary
 from torch.utils.tensorboard import SummaryWriter
 from comet_ml import start
 
