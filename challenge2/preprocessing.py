@@ -12,14 +12,25 @@ import config
 
 # MODIFICA: Aumentato a 512 per catturare più contesto architettonico.
 # La rete poi farà resize a 224, vedendo "più roba" anche se meno dettagliata.
-TILE_SIZE = 512 
+TILE_SIZE = 224
 
 # Stride per l'overlap (metà del tile size per avere buon TTA)
-STRIDE = 256 
+STRIDE = 112  # 50% overlap
 
-# Soglia minima di tessuto utile. 
-# Se un patch ha meno del 40% di tessuto (è tutto sfondo), lo scartiamo.
-TISSUE_THRESHOLD_RATIO = 0.40 
+# Soglia minima di tessuto utile (training).
+TISSUE_THRESHOLD_RATIO = 0.15  # 15% di tessuto minimo
+# Soglia minima per il test: teniamo quasi tutto, ma scartiamo <1% di tessuto.
+TEST_TISSUE_THRESHOLD_RATIO = 0.01
+# Peso minimo per mantenere rilevanza anche ai patch con poco tessuto nel test.
+MIN_PATCH_WEIGHT = 0.01
+
+def compute_patch_weight(tissue_ratio: float) -> float:
+    """
+    Restituisce un peso crescente con il contenuto di tessuto.
+    Un floor evita pesi nulli quando il test set viene mantenuto integralmente.
+    """
+    ratio = float(tissue_ratio)
+    return min(1.0, max(MIN_PATCH_WEIGHT, ratio))
 
 # =============================================================================
 # 1. UTILITY & I/O FUNCTIONS
@@ -123,9 +134,11 @@ def process_single_slide(img_path, mask_path, label, output_img_dir, is_test_set
             total_pixels_crop = mask_crop.shape[0] * mask_crop.shape[1]
             tissue_ratio = tissue_pixels / total_pixels_crop
             
-            # Se meno del 40% del patch è tessuto reale, SCARTA.
-            # Questo elimina i patch neri/bianchi inutili.
-            if tissue_ratio < TISSUE_THRESHOLD_RATIO:
+            # Training: scarta patch quasi vuoti.
+            if not is_test_set and tissue_ratio < TISSUE_THRESHOLD_RATIO:
+                continue
+            # Test: scarta solo patch <1% tessuto per non sprecare memoria.
+            if is_test_set and tissue_ratio < TEST_TISSUE_THRESHOLD_RATIO:
                 continue
             
             # --- Padding (Reflection) ---
@@ -137,9 +150,8 @@ def process_single_slide(img_path, mask_path, label, output_img_dir, is_test_set
                 # Padding su bianco per evitare artefatti neri? 
                 # Reflect è meglio perché continua la texture.
 
-            # Calcolo peso (opzionale per sampler)
-            # Dato che abbiamo filtrato, i patch qui sono tutti buoni.
-            weight = 1.0 
+            # Calcolo peso crescente con il contenuto di tessuto (train e test).
+            weight = compute_patch_weight(tissue_ratio)
                 
             tile_name = f"{base_name}_y{y}_x{x}.png"
             cv2.imwrite(str(output_img_dir / tile_name), img_crop)
@@ -258,4 +270,4 @@ def process_test(preprocess_name=None):
 
 if __name__ == "__main__":
     # Usa un nome nuovo per non sovrascrivere se vuoi comparare
-    preprocess(do_test=True, preprocess_name="preprocess_v2_512_white")
+    preprocess(do_test=True, preprocess_name="preprocess_v2_224_white_15%")
