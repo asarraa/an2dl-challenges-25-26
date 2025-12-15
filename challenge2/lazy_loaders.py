@@ -96,11 +96,11 @@ class LazyImageDataset(torch.utils.data.Dataset):
         image_tensor = self.normalize(image_tensor)
         
         # --- DEBUG PRIMA IMMAGINE ---
-        if idx == 0:
-            print(f"Tensor Stats for {img_name}:")
-            print(f"   Min: {image_tensor.min():.2f} (Target: negativo)")
-            print(f"   Max: {image_tensor.max():.2f} (Target: positivo)")
-            print(f"   Mean: {image_tensor.mean():.2f} (Target: ~0)")
+        # if idx == 0:
+        #     print(f"Tensor Stats for {img_name}:")
+        #     print(f"   Min: {image_tensor.min():.2f} (Target: negativo)")
+        #     print(f"   Max: {image_tensor.max():.2f} (Target: positivo)")
+        #     print(f"   Mean: {image_tensor.mean():.2f} (Target: ~0)")
         
         return image_tensor, torch.tensor(label, dtype=torch.long)
 
