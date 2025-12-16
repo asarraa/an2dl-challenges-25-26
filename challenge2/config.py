@@ -98,6 +98,17 @@ HISTOLOGY_DENSENET_DEFAULTS = {
     "freeze_backbone": True
 }
 
+VGG16_FINETUNE_DEFAULTS = {
+    "num_classes": 4,
+    "input_channels": 3,
+    "use_pretrained": True,
+    "dropout_rate": 0.5,
+    "classifier_hidden": 512,
+    "freeze_backbone": False,
+    "freeze_until": "features.10",  # Freeze up to this layer
+    "global_pool": "avg",
+}
+
 # 5. DIRECTORIES
 BASE_FOLDER = Path("./") # path for colab
 BASE_DATA = BASE_FOLDER / "data"

@@ -85,6 +85,11 @@ def instantiate_model(model_name, current_model_cfg, data_input_shape, device_ob
         model = models.HistologyDenseNet(**cfg_copy)
         model.to(device_obj)
         return model
+    elif model_name == "FineTunedVGG16":
+        cfg_copy = current_model_cfg.copy()
+        if 'input_shape' in cfg_copy:
+            del cfg_copy['input_shape']
+        model = models.FineTunedVGG16(**cfg_copy)
     # Move model to device BEFORE calling summary (torchsummary requires this)
     model = model.to(device_obj)
 
@@ -193,6 +198,8 @@ def start_training(model_name="CNN", model_params=None, training_params=None, de
         current_model_cfg = config.RESNET18_FINETUNE_DEFAULTS.copy()
     elif model_name == "HistologyDenseNet":
         current_model_cfg = config.HISTOLOGY_DENSENET_DEFAULTS.copy()
+    elif model_name == "FineTunedVGG16":
+        current_model_cfg = config.VGG16_FINETUNE_DEFAULTS.copy()
         
     # Update with whatever you passed in (if anything)
     if training_params:
