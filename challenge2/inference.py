@@ -129,6 +129,12 @@ def load_model(
         model_cfg["num_classes"] = num_classes
         model_cfg["input_channels"] = c
         model = models.FineTunedResNet18(**model_cfg)
+    elif name in ("MultiScale", "DualBranchResNet"):
+        # MultiScale model: DualBranchResNet expects (context, detail) tuple
+        model_cfg = {"num_classes": num_classes}
+        if "backbone_name" in cfg:
+            model_cfg["backbone_name"] = cfg["backbone_name"]
+        model = models.DualBranchResNet(**model_cfg)
     else:
         raise ValueError(f"Unsupported model '{name}'. Use --model-name to pick a valid one.")
 
@@ -157,6 +163,7 @@ def infer_conv1_in_channels(state_dict: dict) -> Optional[int]:
 def predict2(model: torch.nn.Module, loader: DataLoader, device: torch.device, num_classes: int) -> pd.DataFrame:
     """
     Esegue l'inferenza restituendo le probabilità (Softmax) per ogni classe.
+    Supporta sia input singolo che MultiScale (context, detail, name).
     """
     model.eval()
     names = []
@@ -164,13 +171,30 @@ def predict2(model: torch.nn.Module, loader: DataLoader, device: torch.device, n
 
     with torch.no_grad():
         for batch in loader:
+            # Handle different batch formats:
+            # - Standard: (imgs, names) or (imgs, names, _)
+            # - MultiScale: (context, detail, names)
             if len(batch) == 3:
-                imgs, batch_names, _ = batch 
+                first, second, third = batch
+                
+                # Check if this is MultiScale format: (context_tensor, detail_tensor, names_list)
+                if isinstance(first, torch.Tensor) and isinstance(second, torch.Tensor) and isinstance(third, (list, tuple)) and isinstance(third[0], str):
+                    # MultiScale format: (context, detail, names)
+                    context = first.to(device)
+                    detail = second.to(device)
+                    batch_names = third
+                    inputs = (context, detail)  # Tuple for DualBranchResNet
+                else:
+                    # Standard format: (imgs, names, _)
+                    imgs = first.to(device)
+                    batch_names = second
+                    inputs = imgs
             else:
+                # Standard format: (imgs, names)
                 imgs, batch_names = batch
+                inputs = imgs.to(device)
 
-            imgs = imgs.to(device)
-            logits = model(imgs)
+            logits = model(inputs)
             probs = F.softmax(logits, dim=1)
             
             names.extend(batch_names)
@@ -273,6 +297,9 @@ def pick_model_name(user_choice: Optional[str], ckpt: dict, state_dict: dict) ->
 
 def infer_model_from_state_dict(state_dict: dict) -> Optional[str]:
     keys = list(state_dict.keys())
+    # Check for DualBranchResNet (has context_backbone and detail_backbone)
+    if any(k.startswith("context_backbone.") for k in keys) and any(k.startswith("detail_backbone.") for k in keys):
+        return "MultiScale"
     if any(k.startswith("backbone.layer1") or k.startswith("backbone.conv1") for k in keys): return "FineTunedResNet50"
     if any(k.startswith("model.layer1") or k.startswith("model.conv1") for k in keys): return "HistologyResNet"
     if any(k.startswith("features.") for k in keys): return "CNN"
