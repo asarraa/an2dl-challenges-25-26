@@ -88,8 +88,14 @@ def instantiate_model(model_name, current_model_cfg, data_input_shape, device_ob
         return model
     elif model_name == "MultiScale":
         cfg_copy = current_model_cfg.copy()
-        if 'input_shape' in cfg_copy:
-            del cfg_copy['input_shape']
+        # Remove parameters that DualBranchResNet doesn't accept
+        invalid_params = ['input_shape', 'use_pretrained', 'input_channels']
+        for param in invalid_params:
+            if param in cfg_copy:
+                del cfg_copy[param]
+        # Map 'use_pretrained' to 'pretrained' if needed
+        if 'pretrained' not in cfg_copy:
+            cfg_copy['pretrained'] = True
         model = models.DualBranchResNet(**cfg_copy)
     # Move model to device BEFORE calling summary (torchsummary requires this)
     model = model.to(device_obj)
