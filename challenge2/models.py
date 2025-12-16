@@ -785,3 +785,133 @@ class DualBranchResNet(nn.Module):
         output = self.classifier(combined_features)
         
         return output
+
+class FineTunedVGG16(nn.Module):
+    """
+    Versione adattata di VGG16_BN per istologia.
+    - Sostituisce il flatten layer originale con Global Average Pooling (o GeM)
+      per ridurre drasticamente i parametri e l'overfitting.
+    - Supporta N canali in input.
+    - Gestisce il freezing per blocchi.
+    """
+
+    def __init__(
+        self,
+        num_classes=4,
+        input_channels=3,
+        use_pretrained=True,
+        dropout_rate=0.5,
+        classifier_hidden=512,
+        freeze_backbone=False,
+        freeze_until="block2", # block1, block2, block3, block4
+        global_pool="gem",
+    ):
+        super().__init__()
+
+        # 1. Carica VGG16 con Batch Normalization (Fondamentale per la convergenza)
+        weights = models.VGG16_BN_Weights.DEFAULT if use_pretrained else None
+        original_vgg = models.vgg16_bn(weights=weights)
+        
+        # VGG separa le feature (conv) dal classificatore. Teniamo solo le feature.
+        self.features = original_vgg.features
+
+        # 2. Adatta il primo layer per canali extra (es. maschera)
+        self._adapt_input_conv(input_channels)
+
+        # 3. Pooling Strategy
+        # VGG esce con 512 canali. Usiamo pooling per ottenere (B, 512, 1, 1)
+        self.in_features = 512
+        if global_pool.lower() == "gem":
+            self.avgpool = GeM()
+        else:
+            self.avgpool = nn.AdaptiveAvgPool2d((1, 1))
+
+        # 4. Freezing
+        if freeze_backbone:
+            for param in self.features.parameters():
+                param.requires_grad = False
+        else:
+            self._freeze_until(freeze_until)
+
+        # 5. Nuovo Classificatore Custom (Molto più leggero dell'originale VGG)
+        self.classifier = nn.Sequential(
+            nn.Flatten(),
+            nn.Dropout(dropout_rate),
+            nn.Linear(self.in_features, classifier_hidden),
+            nn.ReLU(inplace=True),
+            nn.Dropout(dropout_rate / 2), # Un po' meno dropout nel secondo step
+            nn.Linear(classifier_hidden, num_classes),
+        )
+
+    def _adapt_input_conv(self, input_channels: int):
+        # In VGG16, il primo layer è features[0]
+        conv1 = self.features[0]
+        
+        if input_channels == conv1.in_channels:
+            return
+
+        new_conv = nn.Conv2d(
+            in_channels=input_channels,
+            out_channels=conv1.out_channels,
+            kernel_size=conv1.kernel_size,
+            stride=conv1.stride,
+            padding=conv1.padding,
+            bias=conv1.bias is not None,
+        )
+
+        with torch.no_grad():
+            # Copia i pesi esistenti
+            copy_channels = min(input_channels, conv1.in_channels)
+            new_conv.weight[:, :copy_channels, :, :] = conv1.weight[:, :copy_channels, :, :]
+
+            # Se ci sono nuovi canali, inizializzali con la media dei canali RGB
+            if input_channels > conv1.in_channels:
+                extra = input_channels - conv1.in_channels
+                mean_weight = conv1.weight.mean(dim=1, keepdim=True)
+                new_conv.weight[:, conv1.in_channels:input_channels, :, :] = mean_weight.repeat(1, extra, 1, 1)
+            
+            # Copia il bias se esiste
+            if conv1.bias is not None:
+                new_conv.bias = conv1.bias
+
+        self.features[0] = new_conv
+
+    def _freeze_until(self, freeze_until: str):
+        """
+        Congela i layer fino al blocco specificato.
+        VGG è sequenziale, quindi mappiamo i nomi agli indici della lista 'features'.
+        Gli indici corrispondono ai MaxPool2d che chiudono i blocchi in VGG16_BN.
+        """
+        # Mappa approssimativa dei blocchi in VGG16_BN
+        # block1 finisce a index 6
+        # block2 finisce a index 13
+        # block3 finisce a index 23
+        # block4 finisce a index 33
+        # block5 finisce a index 43
+        block_indices = {
+            "block1": 6,
+            "block2": 13,
+            "block3": 23,
+            "block4": 33,
+            "block5": 43
+        }
+
+        if freeze_until not in block_indices:
+            return
+
+        stop_index = block_indices[freeze_until]
+        
+        # Itera su tutti i layer sequenziali
+        for i, layer in enumerate(self.features):
+            for param in layer.parameters():
+                param.requires_grad = False
+            
+            # Se abbiamo raggiunto la fine del blocco richiesto, fermati
+            if i >= stop_index:
+                break
+
+    def forward(self, x):
+        x = self.features(x)  # Estrazione feature (B, 512, H/32, W/32)
+        x = self.avgpool(x)   # Pooling (B, 512, 1, 1)
+        x = self.classifier(x) # Classificazione
+        return x
