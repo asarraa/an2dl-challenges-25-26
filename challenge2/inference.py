@@ -32,7 +32,7 @@ def make_inference(
     
     # 1. Carica i dati del test set
     try:
-        test_loader = data_loaders.get_mil_loaders(
+        test_loader = data_loaders.get_mil_test_loader(
             base_path=base_path,
             batch_size=batch_size
         )

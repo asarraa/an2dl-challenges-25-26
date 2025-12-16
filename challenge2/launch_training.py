@@ -163,7 +163,7 @@ def start_training(model_name="CNN", model_params=None, training_params=None, de
     # Convert to Path if string
     data_path = Path(data_path)
 
-    train_loader, val_loader, _, class_weights = mil_pipeline.get_mil_loaders(
+    train_loader, val_loader, = mil_pipeline.get_mil_loaders(
         base_path=data_path,
         batch_size=batch_size
     )
