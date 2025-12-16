@@ -58,10 +58,8 @@ def train_one_epoch(model, train_loader, criterion, optimizer, scaler, device, l
 
         # Forward pass with mixed precision (if CUDA available)
         with torch.amp.autocast(device_type=device.type, enabled=(device.type == 'cuda')):
-            if isinstance(inputs, tuple):
-                logits = model(inputs[0], inputs[1])  # Dual-branch forward
-            else:
-                logits = model(inputs)  # Standard forward
+            # inputs is either a single tensor or a tuple (context, detail) for dual-branch
+            logits = model(inputs)
             if debug_mode and batch_idx == 0:
                 print(f"[DEBUG] Forward pass done, logits shape: {logits.shape}", flush=True)
             loss = criterion(logits, targets)
@@ -146,10 +144,8 @@ def validate_one_epoch(model, val_loader, criterion, device, debug_mode=True):
 
             # Forward pass with mixed precision (if CUDA available)
             with torch.amp.autocast(device_type=device.type, enabled=(device.type == 'cuda')):
-                if isinstance(inputs, tuple):
-                    logits = model(inputs[0], inputs[1])
-                else:
-                    logits = model(inputs)
+                # inputs is either a single tensor or a tuple (context, detail) for dual-branch
+                logits = model(inputs)
                 loss = criterion(logits, targets)
 
             # Accumulate metrics
