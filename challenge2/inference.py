@@ -8,8 +8,7 @@ from torch.utils.data import DataLoader
 
 # Assumiamo che questi file esistano e siano importabili
 import multiscale_pipeline as data_loaders
-import multiscale_model as models
-
+import models
 # =============================================================================
 # --- FUNZIONE PRINCIPALE DI INFERENZA ---
 # =============================================================================
