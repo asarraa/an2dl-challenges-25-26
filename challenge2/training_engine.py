@@ -150,6 +150,14 @@ def fit(model, train_loader, val_loader, epochs, criterion, optimizer, scaler, d
             print(f"   - Saving best model weights to '{best_model_path}'")
             torch.save(model.state_dict(), best_model_path)
             
+            # Log improved model to Comet
+            if comet_experiment:
+                comet_experiment.log_model(
+                    name=f"{experiment_name}_epoch{epoch}", 
+                    file_or_folder=str(best_model_path)
+                )
+                comet_experiment.log_metric("best_val_f1", current_metric, step=epoch)
+            
         else:
             patience_counter += 1
             print(f"   - No improvement. Patience: {patience_counter}/{patience}")
