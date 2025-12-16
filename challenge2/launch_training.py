@@ -143,227 +143,148 @@ def get_optimizer_and_scaler(optimizer_name, model, learning_rate, l2_lambda, de
     scaler = torch.amp.GradScaler(enabled=(device_obj.type == 'cuda'))
     return optimizer, scaler
 
-def start_training(model_name="CNN", model_params=None, training_params=None, device=None, data_input_shape=None, debug_mode=False, local_data_path=None, class_weights=None, data_path=None, batch_size=128, pretrained_model_path=None):
+# Import necessari all'inizio del tuo file launch_training.py
+import torch
+import torch.nn as nn
+from pathlib import Path
+from huggingface_hub import login
+from torch.utils.tensorboard import SummaryWriter # Assicurati di importare SummaryWriter
+from comet_ml import Experiment # Assumendo che usi start da un altro file
+
+# Importa i tuoi moduli personalizzati
+import mil_model
+import mil_pipeline
+from training_engine import fit
+
+# =============================================================================
+# --- FUNZIONE PRINCIPALE DI ORCHESTRAZIONE DEL TRAINING (Versione MIL) ---
+# =============================================================================
+
+def start_training(
+    model_name: str, 
+    training_params: dict,
+    data_path: Path,
+    batch_size: int,
+    device: torch.device,
+    comet_experiment: Experiment, # Passa l'esperimento Comet
+    local_data_path: Path,
+    debug_mode: bool = False,
+    pretrained_model_path: Path = None # Per riprendere un training
+):
     """
-    Args:
-        model_name (str): "CNN" or "EfficientNet"
-        model_params (dict): Dictionary of overrides for the model architecture.
-        training_params (dict): Dictionary of overrides for training (lr, epochs, etc).
-        data_path (str or Path): Path to the preprocessed data folder. Required.
+    Orchestra l'intero processo di training per il modello MIL con backbone UNI.
     """
-    from pathlib import Path
+    print(f"--- Avvio del processo di training per il modello: {model_name} ---")
     
-    # Validate data_path is provided
-    if data_path is None:
-        raise ValueError(
-            "data_path is required! Please provide the path to your preprocessed data folder.\n"
-            "Example: data_path='/kaggle/working/an2dl-challenges-25-26/challenge2/data/preprocessed/preprocess_v1'"
-        )
-    
-    # Convert to Path if string
-    data_path = Path(data_path)
-
-    train_loader, val_loader, = mil_pipeline.get_mil_loaders(
-        base_path=data_path,
-        batch_size=batch_size
-    )
-    
-    reg_manager = registry_module.ModelRegistry(local_data_path)
-    run_id = reg_manager.generate_id(prefix=model_name)
-
-    best_model, best_performance = initialize_training()
-
-    # Handle device: accept both string ("cuda"/"cpu") or torch.device object
-    if isinstance(device, torch.device):
-        device_obj = device
-    elif device == "cuda" and torch.cuda.is_available():
-        device_obj = torch.device("cuda")
-    elif device == "cuda":
-        print("WARNING: CUDA requested but not available! Using CPU instead.", flush=True)
-        device_obj = torch.device("cpu")
-    elif device == "cpu":
-        device_obj = torch.device("cpu")
-    else:
-        # Default: use CUDA if available, otherwise CPU
-        device_obj = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    
-    if debug_mode:
-        print(f"[DEBUG] Device type: {type(device)}, Final device: {device_obj}, CUDA available: {torch.cuda.is_available()}", flush=True)
-    if device_obj.type == "cuda":
-        print(f"Using GPU: {torch.cuda.get_device_name(0)}", flush=True)
-    else:
-        print("WARNING: Using CPU (this will be slow!)", flush=True)
-    print(f"--- Starting {model_name} on {device_obj} ---", flush=True)
-    # -------------------------------------------------------
-    # 1. SETUP CONFIGURATION (Merge Defaults + Overrides)
-    # -------------------------------------------------------
-    
-    # A. Prepare Training Config
-    # Start with defaults from config.py
-    current_train_cfg = config.TRAINING_DEFAULTS.copy()
-    current_model_cfg = {}
-    # B. Prepare Model Config
-    if model_name == "CNN":
-        current_model_cfg = config.CNN_DEFAULTS.copy()
-    elif model_name == "CNNCustom":
-        current_model_cfg = config.CNN_DEFAULTS.copy()
-    elif model_name == "EfficientNet":
-        current_model_cfg = config.EFFICIENTNET_DEFAULTS.copy()
-    elif model_name == "HistologyResNet":
-        # Se hai messo RESNET_DEFAULTS in config.py usa quello, 
-        # altrimenti definiscilo qui al volo:
-        if hasattr(config, 'RESNET_DEFAULTS'):
-            current_model_cfg = config.RESNET_DEFAULTS.copy()
-        else:
-            current_model_cfg = {
-                "num_classes": 4, 
-                "use_pretrained": True, 
-                "backbone": "resnet18"
-            }
-    elif model_name == "PretrainedEfficientNet":
-        current_model_cfg = config.PRETRAINED_EFFICIENTNET_DEFAULTS.copy()
-    elif model_name == "FineTunedResNet50":
-        current_model_cfg = config.RESNET50_FINETUNE_DEFAULTS.copy()
-    elif model_name == "FineTunedResNet18":
-        current_model_cfg = config.RESNET18_FINETUNE_DEFAULTS.copy()
-    elif model_name == "HistologyDenseNet":
-        current_model_cfg = config.HISTOLOGY_DENSENET_DEFAULTS.copy()
-    elif model_name == "MultiScale":
-        current_model_cfg = config.MULTISCALE_DEFAULTS.copy()
-    elif model_name == "AttentionMIL":
-        current_model_cfg = config.MIL_DEFAULT.copy()
-        
-    # Update with whatever you passed in (if anything)
-    if training_params:
-        current_train_cfg.update(training_params)
-    # Update with model overrides
-    if model_params:
-        current_model_cfg.update(model_params)
-    
-    # Override input_shape with the actual data shape passed as parameter
-    if data_input_shape is not None:
-        print("Checkpoint")
-        print(f"✓ Original input_shape in config: {current_model_cfg.get('input_shape', 'Not set')}")
-        current_model_cfg['input_shape'] = data_input_shape
-        print(f"✓ Updated input_shape to: {data_input_shape}")
-
-    train_parameters_summary = "\n".join([f"{k}: {v}" for k, v in current_train_cfg.items()])
-    model_parameters_summary = "\n".join([f"{k}: {v}" for k, v in current_model_cfg.items()])
-    print(f"Starting {model_name} model training...")
-    print("Training Configuration:\n", train_parameters_summary)
-    print("Model Configuration:\n", model_parameters_summary)
-
-    #Initialize Comet logging
-    comet_experiment = start(
-      api_key="nhvfD4vUpZNMoJQ3dEjOwIeua",
-      project_name="test",
-      workspace="asarraa",
-    )
-    
-    comet_experiment.set_name(run_id)
-
-    comet_experiment.log_parameters(current_train_cfg)
-    comet_experiment.log_parameters(current_model_cfg)
-
-    # -------------------------------------------------------
-    # 2. INSTANTIATE (Using the merged configs)
-    # -------------------------------------------------------
-    if debug_mode:
-        print("[DEBUG] About to instantiate model...", flush=True)
-    # Instantiate Model
-    model = instantiate_model(model_name, current_model_cfg, data_input_shape, device_obj)
-    if debug_mode:
-        print("[DEBUG] Model instantiated successfully", flush=True) 
-    
-    if pretrained_model_path is not None:
-        print(f"Loading pretrained model from {pretrained_model_path}...", flush=True)
-        model.load_state_dict(torch.load(pretrained_model_path, map_location=device_obj, weights_only=False))
-        print("Pretrained model loaded successfully.", flush=True)
-    # Get criterion
-    criterion = get_criterion_from_name(current_train_cfg['criterion_name'], device_obj, class_weights)
-
-    optimizer, scaler = get_optimizer_and_scaler(current_train_cfg['optimizer_name'], model, current_train_cfg['learning_rate'], current_train_cfg['l2_lambda'], device_obj)
-    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=current_train_cfg['epochs'])
-
-    # TensorBoard
-    writer = SummaryWriter(f"tensorboard/{run_id}")
-    '''
-    writer = SummaryWriter(f"tensorboard/{experiment_name}")
-    x = torch.randn(1, data_input_shape[0], data_input_shape[1], data_input_shape[2]).to(device_obj)
-    writer.add_graph(model, x)
-    '''
-
+    # --- FASE 0: Autenticazione a Hugging Face ---
     try:
-        if data_input_shape is not None:
-            # Crea input dummy sullo stesso device del modello
-            x = torch.randn(1, *data_input_shape).to(device_obj)
-            writer.add_graph(model, x)
+        login()
     except Exception as e:
-        print(f"Warning: TensorBoard Graph logging failed (skipping): {e}")
+        print(f"ATTENZIONE: Login a Hugging Face fallito o già eseguito.")
 
-    # -------------------------------------------------------
-    # 3. RUN TRAINING
-    # -------------------------------------------------------
+    # --- FASE 1: Ottenimento delle trasformazioni corrette dal modello UNI ---
+    print("\n--- [FASE 1] Ottenimento delle trasformazioni specifiche di UNI ---")
+    try:
+        # Crea un modello fittizio solo per accedere alla sua configurazione
+        dummy_model = mil_model.AttentionMIL(num_classes=training_params['num_classes'])
+        uni_transforms = mil_model.get_uni_transforms(dummy_model.backbone)
+        del dummy_model
+        print("✅ Trasformazioni per UNI ottenute con successo.")
+    except Exception as e:
+        print(f"❌ ERRORE CRITICO: Impossibile ottenere le trasformazioni di UNI. {e}")
+        return None, None, None
 
-    if debug_mode:
-        print("[DEBUG] About to call fit()...", flush=True)
-    # Train model and track training history
+    # --- FASE 2: Creazione dei DataLoaders ---
+    print("\n--- [FASE 2] Creazione dei DataLoaders Multi-Istanza ---")
+    try:
+        train_loader, val_loader, _, class_weights = mil_pipeline.get_mil_loaders(
+            base_path=data_path,
+            batch_size=batch_size,
+            uni_transform=uni_transforms
+        )
+        print("✅ DataLoaders creati con successo.")
+    except Exception as e:
+        print(f"❌ ERRORE CRITICO: Creazione DataLoaders fallita. {e}")
+        return None, None, None
+
+    # --- FASE 3: Istanziazione del modello ---
+    print("\n--- [FASE 3] Istanziazione del modello per il training ---")
+    try:
+        if model_name != "AttentionMIL_UNI":
+            raise ValueError(f"Questo script è configurato solo per 'AttentionMIL_UNI', non '{model_name}'.")
+        
+        model = mil_model.AttentionMIL(
+            num_classes=training_params['num_classes'],
+            backbone_name=training_params.get('backbone_name', 'hf-hub:MahmoodLab/UNI2-h'),
+            freeze_backbone=training_params.get('freeze_backbone', True),
+            dropout_rate=training_params.get('dropout_rate', 0.5)
+        )
+        
+        if pretrained_model_path:
+            print(f"Caricamento pesi da un training precedente: {pretrained_model_path}...", flush=True)
+            model.load_state_dict(torch.load(pretrained_model_path, map_location=device))
+            print("Pesi caricati con successo.", flush=True)
+
+        model.to(device)
+        print(f"✅ Modello '{model_name}' istanziato e spostato su '{device}'.")
+        print(f"   - Backbone freezato: {training_params.get('freeze_backbone', True)}")
+        
+    except Exception as e:
+        print(f"❌ ERRORE CRITICO: Istanziazione modello fallita. {e}")
+        return None, None, None
+
+    # --- FASE 4: Definizione degli oggetti di training ---
+    print("\n--- [FASE 4] Configurazione degli oggetti di training ---")
+    
+    criterion = torch.nn.CrossEntropyLoss(weight=class_weights.to(device))
+    
+    # Logica per i learning rate differenziati
+    backbone_lr = training_params.get('backbone_lr', training_params['learning_rate'])
+    classifier_lr = training_params.get('classifier_lr', training_params['learning_rate'])
+    
+    optimizer_params = [
+        {'params': model.backbone.parameters(), 'lr': backbone_lr},
+        {'params': model.attention_net.parameters(), 'lr': classifier_lr},
+        {'params': model.classifier.parameters(), 'lr': classifier_lr}
+    ]
+    
+    optimizer = torch.optim.AdamW(optimizer_params, weight_decay=training_params['l2_lambda'])
+    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=training_params['epochs'])
+    scaler = torch.cuda.amp.GradScaler(enabled=(device.type == 'cuda'))
+    
+    print(f"   - Criterion: CrossEntropyLoss (con class weights)")
+    print(f"   - Optimizer: AdamW")
+    print(f"   - Learning Rates: Backbone={backbone_lr}, Head={classifier_lr}")
+    print(f"   - Scheduler: CosineAnnealingLR")
+
+    # --- FASE 5: Avvio del training ---
+    print("\n--- [FASE 5] Avvio del ciclo di training (fit) ---")
+    
+    run_id = comet_experiment.id if comet_experiment else "local_run"
+    experiment_name = f"{model_name}_{run_id[:8]}"
+    
+    # TensorBoard (opzionale)
+    writer = SummaryWriter(f"tensorboard/{experiment_name}")
+
     model, training_history = fit(
         model=model,
         train_loader=train_loader,
         val_loader=val_loader,
-        epochs=current_train_cfg['epochs'],
+        epochs=training_params['epochs'],
         criterion=criterion,
         optimizer=optimizer, 
+        scheduler=scheduler,
         scaler=scaler,
-        device=device_obj, 
+        device=device, 
         writer=writer,
-        l1_lambda=current_train_cfg['l1_lambda'],
-        l2_lambda=0, #already applied in AdamW optimizer, don't change!
-        verbose=current_train_cfg['verbose'],
-        experiment_name=run_id, 
-        patience=current_train_cfg['patience'],
+        patience=training_params['patience'],
+        experiment_name=experiment_name, 
         comet_experiment=comet_experiment,
         debug_mode=debug_mode,
-        local_data_path=local_data_path,
-        scheduler=scheduler,
-        )
-
-    # Update best model if current performance is superior
-    if training_history['val_f1'][-1] > best_performance:
-        best_model = model
-        best_performance = training_history['val_f1'][-1]
-
-    # -------------------------------------------------------
-    # 5. SAVE TO REGISTRY 
-    # -------------------------------------------------------
-        
-    # Extract final metrics from history
-    # We take the last value of the validation F1 and Loss
-    final_metrics = {
-        "val_f1": training_history['val_f1'][-1],
-        "val_loss": training_history['val_loss'][-1],
-        "train_loss": training_history['train_loss'][-1],
-        "best_val_f1": max(training_history['val_f1']), # or however you track best
-        "best_train_f1": max(training_history['train_f1'])
-
-    }
-    
-    # Add 'model_name' to model_cfg so it appears in the ID
-    current_model_cfg["model_name"] = model_name
-
-    # Save everything
-    exp_id = reg_manager.save_experiment(
-        model=model,
-        optimizer=optimizer,
-        train_cfg=current_train_cfg,
-        model_cfg=current_model_cfg,
-        metrics=final_metrics,
-        run_id=run_id
+        local_data_path=local_data_path
     )
+
     
-    # Log the ID to Comet so you can link them
-    comet_experiment.log_other("local_experiment_id", exp_id)
     comet_experiment.end()
     
-    return model, training_history, exp_id
+    return model, training_history, run_id
