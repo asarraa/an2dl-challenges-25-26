@@ -129,6 +129,12 @@ def load_model(
         model_cfg["num_classes"] = num_classes
         model_cfg["input_channels"] = c
         model = models.FineTunedResNet18(**model_cfg)
+    elif name == "FineTunedVGG16":
+        model_cfg = config.VGG16_FINETUNE_DEFAULTS.copy()
+        model_cfg.update({k: v for k, v in cfg.items() if k in model_cfg})
+        model_cfg["num_classes"] = num_classes
+        model_cfg["input_channels"] = c
+        model = models.FineTunedVGG16(**model_cfg)
     else:
         raise ValueError(f"Unsupported model '{name}'. Use --model-name to pick a valid one.")
 
