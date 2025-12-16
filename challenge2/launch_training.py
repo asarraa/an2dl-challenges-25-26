@@ -142,14 +142,13 @@ def get_optimizer_and_scaler(optimizer_name, model, learning_rate, l2_lambda, de
     # Enable mixed precision training for GPU acceleration
     scaler = torch.amp.GradScaler(enabled=(device_obj.type == 'cuda'))
     return optimizer, scaler
-
 # Import necessari all'inizio del tuo file launch_training.py
 import torch
 import torch.nn as nn
 from pathlib import Path
 from huggingface_hub import login
-from torch.utils.tensorboard import SummaryWriter # Assicurati di importare SummaryWriter
-from comet_ml import Experiment # Assumendo che usi start da un altro file
+from torch.utils.tensorboard import SummaryWriter
+from comet_ml import Experiment
 
 # Importa i tuoi moduli personalizzati
 import mil_model
@@ -157,39 +156,45 @@ import mil_pipeline
 from training_engine import fit
 
 # =============================================================================
-# --- FUNZIONE PRINCIPALE DI ORCHESTRAZIONE DEL TRAINING (Versione MIL) ---
+# --- FUNZIONE PRINCIPALE DI ORCHESTRAZIONE DEL TRAINING (Versione Finale) ---
 # =============================================================================
 
 def start_training(
     model_name: str, 
+    model_params: dict,      # <-- REINSERITO L'ARGOMENTO
     training_params: dict,
     data_path: Path,
     batch_size: int,
     device: torch.device,
-    comet_experiment: Experiment, # Passa l'esperimento Comet
+    comet_experiment: Experiment,
     local_data_path: Path,
     debug_mode: bool = False,
-    pretrained_model_path: Path = None # Per riprendere un training
+    pretrained_model_path: Path = None
 ):
     """
     Orchestra l'intero processo di training per il modello MIL con backbone UNI.
     """
     print(f"--- Avvio del processo di training per il modello: {model_name} ---")
     
-    # --- FASE 0: Autenticazione a Hugging Face ---
+    # --- FASE 0: Autenticazione ---
     try:
         login()
     except Exception as e:
         print(f"ATTENZIONE: Login a Hugging Face fallito o già eseguito.")
 
-    # --- FASE 1: Ottenimento delle trasformazioni corrette dal modello UNI ---
+    # --- FASE 1: Ottenimento delle trasformazioni ---
     print("\n--- [FASE 1] Ottenimento delle trasformazioni specifiche di UNI ---")
     try:
-        # Crea un modello fittizio solo per accedere alla sua configurazione
-        dummy_model = mil_model.AttentionMIL_UNI(num_classes=training_params['num_classes'])
-        uni_transforms = mil_model.get_uni_transforms(dummy_model.backbone)
-        del dummy_model
+        # --- MODIFICA: Usa num_classes da model_params ---
+        dummy_model_for_transforms = mil_model.AttentionMIL(
+            num_classes=model_params['num_classes']
+        )
+        uni_transforms = mil_model.get_uni_transforms(dummy_model_for_transforms.backbone)
+        del dummy_model_for_transforms
         print("✅ Trasformazioni per UNI ottenute con successo.")
+    except KeyError:
+        print("❌ ERRORE CRITICO: 'num_classes' non trovato in model_params. Assicurati di specificarlo.")
+        return None, None, None
     except Exception as e:
         print(f"❌ ERRORE CRITICO: Impossibile ottenere le trasformazioni di UNI. {e}")
         return None, None, None
@@ -213,11 +218,12 @@ def start_training(
         if model_name != "AttentionMIL_UNI":
             raise ValueError(f"Questo script è configurato solo per 'AttentionMIL_UNI', non '{model_name}'.")
         
+        # --- MODIFICA: Usa i parametri da model_params ---
         model = mil_model.AttentionMIL(
-            num_classes=training_params['num_classes'],
-            backbone_name=training_params.get('backbone_name', 'hf-hub:MahmoodLab/UNI2-h'),
-            freeze_backbone=training_params.get('freeze_backbone', True),
-            dropout_rate=training_params.get('dropout_rate', 0.5)
+            num_classes=model_params['num_classes'],
+            backbone_name=model_params.get('backbone_name', 'hf-hub:MahmoodLab/UNI2-h'),
+            freeze_backbone=model_params.get('freeze_backbone', True),
+            dropout_rate=model_params.get('dropout_rate', 0.5)
         )
         
         if pretrained_model_path:
@@ -227,7 +233,7 @@ def start_training(
 
         model.to(device)
         print(f"✅ Modello '{model_name}' istanziato e spostato su '{device}'.")
-        print(f"   - Backbone freezato: {training_params.get('freeze_backbone', True)}")
+        print(f"   - Backbone freezato: {model_params.get('freeze_backbone', True)}")
         
     except Exception as e:
         print(f"❌ ERRORE CRITICO: Istanziazione modello fallita. {e}")
@@ -238,32 +244,26 @@ def start_training(
     
     criterion = torch.nn.CrossEntropyLoss(weight=class_weights.to(device))
     
-    # Logica per i learning rate differenziati
+    # (Logica per i learning rate differenziati e optimizer rimane la stessa)
     backbone_lr = training_params.get('backbone_lr', training_params['learning_rate'])
     classifier_lr = training_params.get('classifier_lr', training_params['learning_rate'])
-    
     optimizer_params = [
         {'params': model.backbone.parameters(), 'lr': backbone_lr},
         {'params': model.attention_net.parameters(), 'lr': classifier_lr},
         {'params': model.classifier.parameters(), 'lr': classifier_lr}
     ]
-    
     optimizer = torch.optim.AdamW(optimizer_params, weight_decay=training_params['l2_lambda'])
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=training_params['epochs'])
     scaler = torch.cuda.amp.GradScaler(enabled=(device.type == 'cuda'))
     
-    print(f"   - Criterion: CrossEntropyLoss (con class weights)")
-    print(f"   - Optimizer: AdamW")
-    print(f"   - Learning Rates: Backbone={backbone_lr}, Head={classifier_lr}")
-    print(f"   - Scheduler: CosineAnnealingLR")
+    # ... (messaggi di log)
 
     # --- FASE 5: Avvio del training ---
     print("\n--- [FASE 5] Avvio del ciclo di training (fit) ---")
     
+    # (La chiamata a fit e la logica successiva rimangono invariate)
     run_id = comet_experiment.id if comet_experiment else "local_run"
     experiment_name = f"{model_name}_{run_id[:8]}"
-    
-    # TensorBoard (opzionale)
     writer = SummaryWriter(f"tensorboard/{experiment_name}")
 
     model, training_history = fit(
@@ -283,8 +283,6 @@ def start_training(
         debug_mode=debug_mode,
         local_data_path=local_data_path
     )
-
     
     comet_experiment.end()
-    
     return model, training_history, run_id
