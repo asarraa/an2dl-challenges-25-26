@@ -272,3 +272,148 @@ def infer_model_from_state_dict(state_dict: dict) -> Optional[str]:
     if any(k.startswith("features.") for k in keys): return "CNN"
     if any("units.0" in k or "MBConvBlock" in k for k in keys): return "EfficientNet"
     return None
+
+
+# ------------------------------
+# Ensemble Helpers
+# ------------------------------
+
+def _run_single_model_inference(
+    loader: DataLoader,
+    device: torch.device,
+    input_shape: Tuple[int, int, int],
+    model_path: Path,
+    model_name: Optional[str] = None,
+) -> pd.DataFrame:
+    """
+    Runs tile-level inference for a single checkpoint and returns probabilities per class.
+    """
+    ckpt, state_dict = load_checkpoint(model_path, map_location="cpu")
+    ckpt_channels = infer_conv1_in_channels(state_dict)
+    model = load_model(
+        model_path=model_path,
+        input_shape=input_shape,
+        num_classes=len(config.LABEL_MAP),
+        model_name=model_name,
+        state_dict=state_dict,
+        ckpt=ckpt,
+        ckpt_channels=ckpt_channels,
+    )
+    model.to(device)
+    return predict2(model, loader, device, num_classes=len(config.LABEL_MAP))
+
+
+def aggregate_patch_votes(
+    tile_dfs: List[pd.DataFrame],
+    vote_strategy: str = "soft",
+    model_weights: Optional[List[float]] = None,
+) -> pd.DataFrame:
+    """
+    Aggregates per-tile predictions coming from multiple models.
+    vote_strategy:
+        - 'soft': weighted average of probabilities (default).
+        - 'hard': weighted majority vote on argmax, converted back to probabilities.
+    """
+    if not tile_dfs:
+        raise ValueError("No tile predictions provided for aggregation.")
+
+    prob_cols = [c for c in tile_dfs[0].columns if c.startswith("prob_")]
+    num_classes = len(prob_cols)
+    sample_order = tile_dfs[0]["sample_index"].tolist()
+
+    # Align probabilities across models using the same sample order
+    aligned_probs = []
+    for idx, df in enumerate(tile_dfs):
+        missing = set(sample_order) - set(df["sample_index"])
+        if missing:
+            raise ValueError(f"Model {idx} is missing {len(missing)} tiles compared to the reference set.")
+        aligned = df.set_index("sample_index").loc[sample_order, prob_cols].to_numpy()
+        aligned_probs.append(aligned)
+
+    weights = model_weights if model_weights is not None else [1.0] * len(aligned_probs)
+    if len(weights) != len(aligned_probs):
+        raise ValueError("Length of model_weights must match number of prediction DataFrames.")
+    weight_array = np.array(weights, dtype=float)
+    weight_array = weight_array / weight_array.sum()
+
+    if vote_strategy == "soft":
+        prob_matrix = np.zeros_like(aligned_probs[0])
+        for arr, w in zip(aligned_probs, weight_array):
+            prob_matrix += arr * w
+    elif vote_strategy == "hard":
+        votes = np.zeros((len(sample_order), num_classes), dtype=float)
+        for arr, w in zip(aligned_probs, weight_array):
+            preds = arr.argmax(axis=1)
+            votes[np.arange(len(sample_order)), preds] += w
+        row_sums = votes.sum(axis=1, keepdims=True)
+        row_sums[row_sums == 0.0] = 1.0
+        prob_matrix = votes / row_sums
+    else:
+        raise ValueError(f"Unknown vote_strategy '{vote_strategy}'. Use 'soft' or 'hard'.")
+
+    aggregated_df = pd.DataFrame(prob_matrix, columns=prob_cols)
+    aggregated_df.insert(0, "sample_index", sample_order)
+    aggregated_df["ensemble_pred_idx"] = aggregated_df[prob_cols].values.argmax(axis=1)
+    aggregated_df["ensemble_pred_label"] = aggregated_df["ensemble_pred_idx"].map({i: lbl for lbl, i in config.LABEL_MAP.items()})
+    return aggregated_df
+
+
+def make_ensemble_inference(
+    loader: DataLoader,
+    device: torch.device,
+    input_shape: Tuple[int, int, int],
+    model_paths: List[Path],
+    model_names: Optional[List[Optional[str]]] = None,
+    base_path: Optional[str] = None,
+    inference_type: str = "weighted_majority_vote",
+    patch_vote: str = "soft",
+    model_weights: Optional[List[float]] = None,
+    save_prefix: str = "ensemble",
+):
+    """
+    Runs inference for multiple checkpoints, aggregates per-tile predictions, and
+    produces a slide-level submission via the chosen aggregation method.
+    """
+    if model_names is None:
+        model_names = [None] * len(model_paths)
+    if len(model_names) != len(model_paths):
+        raise ValueError("model_names length must match model_paths length.")
+
+    inv_label_map = {v: k for k, v in config.LABEL_MAP.items()}
+    _, _, csv_path = _resolve_paths(base_path=base_path, add_mask_channel=False, is_test=True)
+    meta_df = pd.read_csv(csv_path)
+    if "weight" not in meta_df.columns:
+        meta_df["weight"] = 1.0
+
+    tile_predictions = []
+    for idx, (path, name) in enumerate(zip(model_paths, model_names)):
+        print(f"[INFO] Running ensemble member {idx + 1}/{len(model_paths)} -> {path}")
+        preds = _run_single_model_inference(
+            loader=loader,
+            device=device,
+            input_shape=input_shape,
+            model_path=Path(path),
+            model_name=name,
+        )
+        preds["model_id"] = name or Path(path).stem
+        tile_predictions.append(preds)
+
+    aggregated_tiles = aggregate_patch_votes(tile_predictions, vote_strategy=patch_vote, model_weights=model_weights)
+    prob_cols = [f"prob_{i}" for i in range(len(config.LABEL_MAP))]
+
+    if inference_type == "weighted_majority_vote":
+        submission, slide_map = weighted_mean_aggregation(aggregated_tiles, meta_df, prob_cols, inv_label_map)
+    elif inference_type == "mil":
+        submission, slide_map = mil_aggregation(aggregated_tiles, meta_df, prob_cols, inv_label_map)
+    else:
+        raise ValueError(f"Inference type '{inference_type}' non supportato.")
+
+    base = Path(base_path) if base_path is not None else Path(".")
+    patch_out = base / f"{save_prefix}_patch_predictions.csv"
+    submission_out = base / f"{save_prefix}_submission.csv"
+    aggregated_tiles.to_csv(patch_out, index=False)
+    submission.to_csv(submission_out, index=False)
+    print(f"[INFO] Saved ensemble patch predictions to {patch_out}")
+    print(f"[INFO] Saved ensemble submission to {submission_out}")
+
+    return submission, slide_map, aggregated_tiles
