@@ -52,7 +52,7 @@ def make_mil_inference(
         print(f"[INFO] Loading AttentionMIL model with {num_classes} classes and '{backbone_name}' backbone.")
         
         # Istanzia il modello corretto
-        model = models.AttentionMIL(
+        model = models.AttentionMIL_UNI(
             num_classes=num_classes,
             backbone_name=backbone_name,
             pretrained=False # Non serve scaricare i pesi, li carichiamo dal file

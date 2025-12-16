@@ -186,7 +186,7 @@ def start_training(
     print("\n--- [FASE 1] Ottenimento delle trasformazioni specifiche di UNI ---")
     try:
         # Crea un modello fittizio solo per accedere alla sua configurazione
-        dummy_model = mil_model.AttentionMIL(num_classes=training_params['num_classes'])
+        dummy_model = mil_model.AttentionMIL_UNI(num_classes=training_params['num_classes'])
         uni_transforms = mil_model.get_uni_transforms(dummy_model.backbone)
         del dummy_model
         print("✅ Trasformazioni per UNI ottenute con successo.")
