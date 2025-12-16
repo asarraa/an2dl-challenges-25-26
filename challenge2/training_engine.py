@@ -132,6 +132,91 @@ def validate_one_epoch(model, val_loader, criterion, device, debug_mode=True):
 
     return epoch_loss, epoch_f1
 
+# =============================================================================
+# --- FUNZIONE FIT (CON SALVATAGGIO DEL MODELLO MIGLIORE CORRETTO) ---
+# =============================================================================
+def fit(model, train_loader, val_loader, epochs, criterion, optimizer, scaler, device,
+        l1_lambda=0, l2_lambda=0, patience=10, evaluation_metric="val_f1", mode='max',
+        restore_best_weights=True, writer=None, verbose=1, experiment_name="", comet_experiment=None, debug_mode=True, local_data_path=".", scheduler=None):
+    
+    training_history = {'train_loss': [], 'val_loss': [], 'train_f1': [], 'val_f1': []}
+    
+    # --- MODIFICA 3: Logica di Early Stopping e Salvataggio migliorata ---
+    patience_counter = 0
+    best_metric = float('-inf') if mode == 'max' else float('inf')
+    best_epoch = 0
+    
+    # Definisci il percorso di salvataggio del modello in modo robusto
+    fit_models_folder = Path(local_data_path) / "fit_models"
+    fit_models_folder.mkdir(exist_ok=True)
+    best_model_path = fit_models_folder / f"{experiment_name}_best_model.pth"
+    # --------------------------------------------------------------------
+
+    for epoch in range(1, epochs + 1):
+        train_loss, train_f1 = train_one_epoch(
+            model, train_loader, criterion, optimizer, scaler, device, 
+            l1_lambda, l2_lambda, debug_mode=debug_mode, comet_experiment=comet_experiment
+        )
+        val_loss, val_f1 = validate_one_epoch(model, val_loader, criterion, device, debug_mode=debug_mode)
+        
+        training_history['train_loss'].append(train_loss)
+        training_history['val_loss'].append(val_loss)
+        training_history['train_f1'].append(train_f1)
+        training_history['val_f1'].append(val_f1)
+
+        if comet_experiment:
+            metrics={"train_loss": train_loss, "train_f1": train_f1, "val_loss":val_loss, "val_f1": val_f1 }
+            comet_experiment.log_metrics(metrics, step=epoch, epoch=epoch)
+
+        if epoch % verbose == 0 or epoch == 1:
+            print(f"Epoch {epoch:3d}/{epochs} | "
+                  f"Train: Loss={train_loss:.4f}, F1={train_f1:.4f} | "
+                  f"Val: Loss={val_loss:.4f}, F1={val_f1:.4f}")
+
+        # --- MODIFICA 4: Logica di salvataggio esplicita e con feedback ---
+        current_metric = val_f1 if evaluation_metric == 'val_f1' else val_loss
+        is_improvement = (current_metric > best_metric) if mode == 'max' else (current_metric < best_metric)
+        
+        # Step the scheduler if provided
+        if scheduler is not None:
+            scheduler.step()
+        
+        if is_improvement:
+            print(f"\n✅ Improvement! {evaluation_metric} changed from {best_metric:.4f} to {current_metric:.4f}.")
+            best_metric = current_metric
+            best_epoch = epoch
+            patience_counter = 0
+            
+            print(f"   - Saving best model weights to '{best_model_path}'")
+            torch.save(model.state_dict(), best_model_path)
+            
+            # Log improved model to Comet
+            if comet_experiment:
+                comet_experiment.log_model(
+                    name=f"{experiment_name}_epoch{epoch}", 
+                    file_or_folder=str(best_model_path)
+                )
+                comet_experiment.log_metric("best_val_f1", current_metric, step=epoch)
+            
+        else:
+            patience_counter += 1
+            print(f"   - No improvement. Patience: {patience_counter}/{patience}")
+
+        if patience_counter >= patience:
+            print(f"\n🛑 Early stopping triggered after {epoch} epochs.")
+            break
+        # ----------------------------------------------------------------
+
+    print("\n--- Training Finished ---")
+    if restore_best_weights:
+        print(f"Restoring best model weights from epoch {best_epoch} with {evaluation_metric} of {best_metric:.4f}")
+        model.load_state_dict(torch.load(best_model_path))
+    
+    if comet_experiment:
+        comet_experiment.log_model(name=f"{experiment_name}_best", file_or_folder=str(best_model_path))
+    
+    return model, training_history
+
 # (La funzione di logging per Tensorboard rimane invariata)
 
 # -----------------------------
