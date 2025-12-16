@@ -5,6 +5,7 @@ import numpy as np
 from pathlib import Path
 from typing import Dict, Tuple, List
 from torch.utils.data import DataLoader 
+import tqdm
 
 # Assumiamo che questi file esistano e siano importabili
 import multiscale_pipeline as data_loaders
