@@ -131,7 +131,7 @@ def get_optimizer_and_scaler(optimizer_name, model, learning_rate, l2_lambda, de
     scaler = torch.amp.GradScaler(enabled=(device_obj.type == 'cuda'))
     return optimizer, scaler
 
-def start_training(model_name="CNN", model_params=None, training_params=None, device=None, train_loader=None, val_loader=None, data_input_shape=None, debug_mode=False, local_data_path=None, class_weights=None):
+def start_training(model_name="CNN", model_params=None, training_params=None, device=None, train_loader=None, val_loader=None, data_input_shape=None, debug_mode=False, local_data_path=None, class_weights=None, checkpoint_path=None):
     """
     Args:
         model_name (str): "CNN" or "EfficientNet"
@@ -236,6 +236,23 @@ def start_training(model_name="CNN", model_params=None, training_params=None, de
     # -------------------------------------------------------
     # 2. INSTANTIATE (Using the merged configs)
     # -------------------------------------------------------
+    if checkpoint_path:
+        print(f"📥 Loading weights from Phase 1: {checkpoint_path}")
+        try:
+            # weights_only=False per evitare l'errore di PyTorch 2.6
+            checkpoint = torch.load(checkpoint_path, map_location=device_obj, weights_only=False)
+            
+            # Gestione dizionario vs modello intero
+            if isinstance(checkpoint, dict) and 'model_state_dict' in checkpoint:
+                model.load_state_dict(checkpoint['model_state_dict'], strict=False)
+            else:
+                model.load_state_dict(checkpoint, strict=False)
+            print("✓ Checkpoint loaded successfully. Starting Fine-Tuning.")
+        except Exception as e:
+            print(f"⚠️ Error loading checkpoint: {e}")
+            print("Stopping to prevent training from scratch unintentionally.")
+            return None, None, None # Interrompi se il checkpoint fallisce
+        
     if debug_mode:
         print("[DEBUG] About to instantiate model...", flush=True)
     # Instantiate Model
