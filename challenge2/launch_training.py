@@ -93,7 +93,11 @@ def instantiate_model(model_name, current_model_cfg, data_input_shape, device_ob
         for param in invalid_params:
             if param in cfg_copy:
                 del cfg_copy[param]
-        # Map 'use_pretrained' to 'pretrained' if needed
+        # Map parameter names to what DualBranchResNet expects
+        if 'backbone' in cfg_copy:
+            cfg_copy['backbone_name'] = cfg_copy.pop('backbone')
+        if 'freeze_backbone' in cfg_copy:
+            cfg_copy['freeze_backbones'] = cfg_copy.pop('freeze_backbone')
         if 'pretrained' not in cfg_copy:
             cfg_copy['pretrained'] = True
         model = models.DualBranchResNet(**cfg_copy)
