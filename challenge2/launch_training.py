@@ -101,7 +101,7 @@ def instantiate_model(model_name, current_model_cfg, data_input_shape, device_ob
         model = models.DualBranchResNet(**cfg_copy)
     elif model_name == "AttentionMIL":
         cfg_copy = current_model_cfg.copy()
-        model = mil_model.AttentionMIL(**cfg_copy)
+        model = mil_model.AttentionMIL_UNI(**cfg_copy)
     # Move model to device BEFORE calling summary (torchsummary requires this)
     model = model.to(device_obj)
 
