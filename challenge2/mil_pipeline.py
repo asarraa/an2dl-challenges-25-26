@@ -83,7 +83,7 @@ def mil_collate_fn(batch):
 # =============================================================================
 # --- 2. FUNZIONI PER CREARE I DATALOADER (CON TEST LOADER INCLUSO) ---
 # =============================================================================
-def get_mil_loaders(base_path: Path, batch_size: int, val_split: float = 0.2, seed: int = 42):
+def get_mil_loaders(base_path: Path, batch_size: int, val_split: float = 0.2, seed: int = 42, augmentation=None):
     train_val_dir = base_path / "train"
     csv_path = train_val_dir / "train_patches.csv"
     df = pd.read_csv(csv_path)
@@ -97,7 +97,10 @@ def get_mil_loaders(base_path: Path, batch_size: int, val_split: float = 0.2, se
     train_df = df[df['original_sample'].isin(train_slides_df['original_sample'])]
     val_df = df[df['original_sample'].isin(val_slides_df['original_sample'])]
     
-    train_augmentation = transforms.Compose([transforms.Resize((224, 224)), transforms.RandomHorizontalFlip(), transforms.ColorJitter(brightness=0.1, contrast=0.1)])
+    if augmentation is not None:
+        train_augmentation = augmentation
+    else:
+        train_augmentation = transforms.Compose([transforms.Resize((224, 224)), transforms.RandomHorizontalFlip(), transforms.ColorJitter(brightness=0.1, contrast=0.1)])
     val_augmentation = transforms.Compose([transforms.Resize((224, 224))])
 
     train_ds = MILDataset(train_df, train_val_dir, transform=train_augmentation)

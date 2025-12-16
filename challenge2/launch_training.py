@@ -143,7 +143,7 @@ def get_optimizer_and_scaler(optimizer_name, model, learning_rate, l2_lambda, de
     scaler = torch.amp.GradScaler(enabled=(device_obj.type == 'cuda'))
     return optimizer, scaler
 
-def start_training(model_name="CNN", model_params=None, training_params=None, device=None, data_input_shape=None, debug_mode=False, local_data_path=None, class_weights=None, data_path=None, batch_size=128, pretrained_model_path=None):
+def start_training(model_name="CNN", model_params=None, training_params=None, device=None, data_input_shape=None, debug_mode=False, local_data_path=None, class_weights=None, data_path=None, batch_size=128, pretrained_model_path=None, augmentation=None):
     """
     Args:
         model_name (str): "CNN" or "EfficientNet"
@@ -165,7 +165,8 @@ def start_training(model_name="CNN", model_params=None, training_params=None, de
 
     train_loader, val_loader, = mil_pipeline.get_mil_loaders(
         base_path=data_path,
-        batch_size=batch_size
+        batch_size=batch_size,
+        augmentation=augmentation,
     )
     
     reg_manager = registry_module.ModelRegistry(local_data_path)
