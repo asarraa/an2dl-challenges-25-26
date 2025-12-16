@@ -770,7 +770,6 @@ class DualBranchResNet(nn.Module):
             nn.Linear(combined_features_dim, 512),
             nn.BatchNorm1d(512),
             nn.ReLU(),
-            print(f"dropout_rate dentro DualBranchResNet: {dropout_rate}"),
             nn.Dropout(dropout_rate), # Dropout DOPO l'attivazione
 
             # 2. Layer finale di output (Logits)
