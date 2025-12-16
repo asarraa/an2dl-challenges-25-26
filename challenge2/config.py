@@ -122,7 +122,13 @@ LABEL_MAP = {
     }
 
 
-MIL_DEFAULT = {"num_classes": 4, "backbone_name": "resnet18", "pretrained": True, "freeze_backbone": True}
+MIL_DEFAULT = {
+    "num_classes": 4,
+    "backbone_name": "vit_small_patch16_224",
+    "pretrained": True,
+    "freeze_backbone": True  # <-- CRUCIALE per la Fase 1
+}
+
 '''
     experiments
         - models
