@@ -122,8 +122,7 @@ LABEL_MAP = {
     }
 
 
-
-
+MIL_DEFAULT = {"num_classes": 4, "backbone_name": "resnet18", "pretrained": True, "freeze_backbone": True}
 '''
     experiments
         - models

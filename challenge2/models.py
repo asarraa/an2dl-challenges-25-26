@@ -739,59 +739,95 @@ class FineTunedResNet18(nn.Module):
     
 
 
+# --- FUNZIONE HELPER PER ADATTARE IL PRIMO LAYER CONVOLUZIONALE ---
+def adapt_first_conv_layer(conv_layer: nn.Conv2d, in_channels: int) -> nn.Conv2d:
+    """
+    Adatta un layer Conv2d pre-addestrato per accettare un numero diverso di canali di input.
+    """
+    # Ottieni i pesi originali (solitamente per 3 canali)
+    original_weights = conv_layer.weight.clone()
+    original_in_channels = conv_layer.in_channels
+
+    # Crea un nuovo layer convoluzionale con il numero di canali desiderato
+    new_conv = nn.Conv2d(
+        in_channels=in_channels,
+        out_channels=conv_layer.out_channels,
+        kernel_size=conv_layer.kernel_size,
+        stride=conv_layer.stride,
+        padding=conv_layer.padding,
+        bias=(conv_layer.bias is not None)
+    )
+
+    # Inizializza i nuovi pesi
+    with torch.no_grad():
+        # Copia i pesi originali per i primi canali
+        new_conv.weight[:, :original_in_channels, :, :] = original_weights
+        
+        # Per i canali aggiuntivi (es. la maschera), inizializzali con la media dei pesi RGB.
+        # Questo è un punto di partenza più intelligente che inizializzarli a zero o casualmente.
+        if in_channels > original_in_channels:
+            mean_weights = original_weights.mean(dim=1, keepdim=True)
+            new_conv.weight[:, original_in_channels:, :, :] = mean_weights.repeat(1, in_channels - original_in_channels, 1, 1)
+
+    return new_conv
+
 
 class DualBranchResNet(nn.Module):
     def __init__(self, num_classes: int, backbone_name: str = 'resnet18', pretrained: bool = True, freeze_backbones: bool = False, dropout_rate: float = 0.5):
         super().__init__()
         
-        # --- Ramo 1: Contesto ---
-        self.context_backbone = models.get_model(backbone_name, weights='IMAGENET1K_V1' if pretrained else None)
+        # --- MODIFICA 1: Il nostro input ora ha 4 canali ---
+        input_channels = 4
+        
+        # --- Carica i backbone pre-addestrati ---
+        context_backbone_pretrained = models.get_model(backbone_name, weights='IMAGENET1K_V1' if pretrained else None)
+        detail_backbone_pretrained = models.get_model(backbone_name, weights='IMAGENET1K_V1' if pretrained else None)
+
+        # --- MODIFICA 2: Adatta il primo layer di ogni backbone ---
+        # Sostituiamo il layer 'conv1' di ogni backbone con la nostra versione a 4 canali
+        self.context_backbone = context_backbone_pretrained
+        self.context_backbone.conv1 = adapt_first_conv_layer(self.context_backbone.conv1, in_channels=input_channels)
+        
+        self.detail_backbone = detail_backbone_pretrained
+        self.detail_backbone.conv1 = adapt_first_conv_layer(self.detail_backbone.conv1, in_channels=input_channels)
+
+        # --- Il resto della logica rimane quasi invariato ---
         context_features_in = self.context_backbone.fc.in_features
         self.context_backbone.fc = nn.Identity()
-
-        # --- Ramo 2: Dettaglio ---
-        self.detail_backbone = models.get_model(backbone_name, weights='IMAGENET1K_V1' if pretrained else None)
         detail_features_in = self.detail_backbone.fc.in_features
         self.detail_backbone.fc = nn.Identity()
         
         if freeze_backbones:
-            for param in self.context_backbone.parameters():
-                param.requires_grad = False
-            for param in self.detail_backbone.parameters():
-                param.requires_grad = False
+            # Se freezi, assicurati di non freezare anche il nuovo conv1!
+            for name, param in self.context_backbone.named_parameters():
+                if 'conv1' not in name: # Non freezare il primo layer
+                    param.requires_grad = False
+            for name, param in self.detail_backbone.named_parameters():
+                if 'conv1' not in name:
+                    param.requires_grad = False
 
-        # --- Testa di Classificazione ("Classifier Head") ---
-        # Questa è la struttura standard e più robusta.
-        
+        # --- Testa di Classificazione (invariata) ---
         combined_features_dim = context_features_in + detail_features_in
-        
         self.classifier = nn.Sequential(
-            # 1. Primo blocco: riduce la dimensionalità e regolarizza
             nn.Linear(combined_features_dim, 512),
             nn.BatchNorm1d(512),
             nn.ReLU(),
-            nn.Dropout(dropout_rate), # Dropout DOPO l'attivazione
-
-            # 2. Layer finale di output (Logits)
-            # Di solito non si applica dropout o attivazione direttamente prima dell'output
+            nn.Dropout(dropout_rate),
             nn.Linear(512, num_classes)
         )
 
     def forward(self, x):
         x_context, x_detail = x
         
-        # Estrai le feature. Non applichiamo dropout qui.
         features_context = self.context_backbone(x_context)
         features_detail = self.detail_backbone(x_detail)
         
-        # Concatena le feature
         combined_features = torch.cat([features_context, features_detail], dim=1)
         
-        # Passa le feature combinate e pulite al classificatore
         output = self.classifier(combined_features)
         
         return output
-
+    
 class FineTunedVGG16(nn.Module):
     """
     Versione adattata di VGG16_BN per istologia.

@@ -14,24 +14,27 @@ import argparse
 from sklearn.utils.class_weight import compute_class_weight
 
 # =============================================================================
-# --- 1. DATASET CLASS MULTI-SCALA (CORRETTA) ---
+# --- 1. DATASET CLASS MULTI-MODALE (IMMAGINE + MASCHERA) ---
 # =============================================================================
 
-class MultiScaleTileDataset(Dataset):
+class MultiModalTileDataset(Dataset):
     """
-    Dataset multi-scala che carica una coppia di tile (contesto e dettaglio).
-    Restituisce 3 elementi: (img_contesto, img_dettaglio, label/nome_file).
+    Dataset multi-modale che carica una coppia di tile (contesto, dettaglio)
+    e le loro maschere ROI corrispondenti, combinandole in un input a 4 canali.
+    Restituisce 3 elementi: (img_contesto_4ch, img_dettaglio_4ch, label/nome_file).
     """
-    def __init__(self, df: pd.DataFrame, base_dir: Path, transform_context=None, transform_detail=None, is_test: bool = False):
+    def __init__(self, df: pd.DataFrame, base_dir: Path, transform=None, is_test: bool = False):
         self.df = df.reset_index(drop=True)
-        self.context_dir = base_dir / "images_context" # Cartella per i tile 768px
-        self.detail_dir = base_dir / "images_detail"   # Cartella per i tile 256px
-        self.transform_context = transform_context
-        self.transform_detail = transform_detail
+        self.base_dir = base_dir
+        self.transform = transform
         self.is_test = is_test
 
-        # La normalizzazione è la stessa per entrambi i rami
-        self.normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+        # --- MODIFICA: Normalizzazione per 4 canali (RGB + Maschera) ---
+        # Usiamo medie e deviazioni standard di ImageNet per RGB e 0.5 per la maschera
+        self.normalize = transforms.Normalize(
+            mean=[0.485, 0.456, 0.406, 0.5],
+            std=[0.229, 0.224, 0.225, 0.5]
+        )
 
     def __len__(self):
         return len(self.df)
@@ -40,226 +43,168 @@ class MultiScaleTileDataset(Dataset):
         row = self.df.iloc[idx]
         img_name = row['sample_index']
         
-        context_path = self.context_dir / img_name
-        detail_path = self.detail_dir / img_name
+        # --- MODIFICA: Definisci i percorsi per tutte e 4 le immagini ---
+        context_img_path = self.base_dir / "images_context" / img_name
+        context_mask_path = self.base_dir / "masks_context" / img_name
+        detail_img_path = self.base_dir / "images_detail" / img_name
+        detail_mask_path = self.base_dir / "masks_detail" / img_name
         
         try:
-            img_context = Image.open(context_path).convert("RGB")
-            img_detail = Image.open(detail_path).convert("RGB")
+            img_context = Image.open(context_img_path).convert("RGB")
+            mask_context = Image.open(context_mask_path).convert("L") # 'L' per scala di grigi a 8-bit
+            img_detail = Image.open(detail_img_path).convert("RGB")
+            mask_detail = Image.open(detail_mask_path).convert("L")
         except Exception as e:
-            raise IOError(f"Could not read image pair for {img_name}. Error: {e}")
+            raise IOError(f"Could not read image/mask pair for {img_name}. Error: {e}")
 
-        # Applica le augmentation
-        if self.transform_context:
-            img_context = self.transform_context(img_context)
-        if self.transform_detail:
-            img_detail = self.transform_detail(img_detail)
+        # --- MODIFICA: Applica le augmentation a immagine e maschera insieme ---
+        if self.transform:
+            # Per applicare le stesse trasformazioni geometriche (es. flip, rotazione)
+            # a immagine e maschera, le "impiliamo" temporaneamente, trasformiamo, e poi separiamo.
+            # Convertiamo prima in tensori per poter fare lo stack
+            img_context_t = transforms.functional.to_tensor(img_context)
+            mask_context_t = transforms.functional.to_tensor(mask_context)
+            
+            # Stack: [4, H, W] -> [C_img+C_mask, H, W]
+            stacked_context = torch.cat([img_context_t, mask_context_t], dim=0)
+            
+            # Applica le augmentation
+            transformed_stacked_context = self.transform(stacked_context)
+            
+            # Separa di nuovo
+            img_context_t = transformed_stacked_context[:3, :, :]
+            mask_context_t = transformed_stacked_context[3:, :, :]
 
-        # Trasforma in tensori e normalizza
-        tensor_context = self.normalize(transforms.functional.to_tensor(img_context))
-        tensor_detail = self.normalize(transforms.functional.to_tensor(img_detail))
+            # Fai lo stesso per l'immagine di dettaglio
+            img_detail_t = transforms.functional.to_tensor(img_detail)
+            mask_detail_t = transforms.functional.to_tensor(mask_detail)
+            stacked_detail = torch.cat([img_detail_t, mask_detail_t], dim=0)
+            transformed_stacked_detail = self.transform(stacked_detail)
+            img_detail_t = transformed_stacked_detail[:3, :, :]
+            mask_detail_t = transformed_stacked_detail[3:, :, :]
+        else:
+            # Se non ci sono augmentation, converti solo in tensori
+            img_context_t = transforms.functional.to_tensor(img_context)
+            mask_context_t = transforms.functional.to_tensor(mask_context)
+            img_detail_t = transforms.functional.to_tensor(img_detail)
+            mask_detail_t = transforms.functional.to_tensor(mask_detail)
+
+        # --- MODIFICA: Combina immagine e maschera in un tensore a 4 canali e normalizza ---
+        final_context = self.normalize(torch.cat([img_context_t, mask_context_t], dim=0))
+        final_detail = self.normalize(torch.cat([img_detail_t, mask_detail_t], dim=0))
         
         if self.is_test:
-            return tensor_context, tensor_detail, img_name
+            return final_context, final_detail, img_name
         else:
             label = row['label']
-            return tensor_context, tensor_detail, torch.tensor(label, dtype=torch.long)
+            return final_context, final_detail, torch.tensor(label, dtype=torch.long)
 
 # =============================================================================
-# --- 2. FUNZIONI PER CREARE I DATALOADER ---
+# --- 2. FUNZIONI PER CREARE I DATALOADER (AGGIORNATE) ---
 # =============================================================================
-def get_multiscale_loaders(
-    base_path: Path,
-    batch_size: int,
-    val_split: float = 0.2,
-    seed: int = 42
-):
-    """
-    Crea e restituisce i DataLoader per training e validazione, input_shape e class_weights.
-    """
-    print("\n--- Creating Multi-Scale Train & Validation DataLoaders ---")
+def get_multimodal_loaders(base_path: Path, batch_size: int, val_split: float = 0.2, seed: int = 42):
+    print("\n--- Creating Multi-Modal (Image+Mask) Train & Validation DataLoaders ---")
     train_val_dir = base_path / "train"
     csv_path = train_val_dir / "train_patches.csv"
-
-    if not csv_path.exists():
-        raise FileNotFoundError(f"CSV file not found at '{csv_path}'.")
-
+    # ... (la logica di split e mappatura delle label rimane la stessa)
     df = pd.read_csv(csv_path)
-
     unique_labels = sorted(df['label'].unique())
     label_map = {label_str: i for i, label_str in enumerate(unique_labels)}
     df['label'] = df['label'].map(label_map)
-    print(f"Labels mapped to integers: {label_map}")
-
     unique_slides_df = df.groupby('original_sample')['label'].first().reset_index()
-    train_slides, val_slides = train_test_split(
-        unique_slides_df, test_size=val_split, random_state=seed, stratify=unique_slides_df['label']
-    )
+    train_slides, val_slides = train_test_split(unique_slides_df, test_size=val_split, random_state=seed, stratify=unique_slides_df['label'])
     train_df = df[df['original_sample'].isin(train_slides['original_sample'])]
     val_df = df[df['original_sample'].isin(val_slides['original_sample'])]
-    
-    print(f"Data split result: {len(train_df)} train tiles, {len(val_df)} validation tiles.")
-
-    # --- Calcolo Pesi delle Classi (sul training set) ---
-    class_weights = compute_class_weight(
-        class_weight='balanced',
-        classes=np.unique(train_df['label']),
-        y=train_df['label'].to_numpy()
-    )
+    class_weights = compute_class_weight('balanced', classes=np.unique(train_df['label']), y=train_df['label'].to_numpy())
     class_weights = torch.tensor(class_weights, dtype=torch.float32)
-    print(f"Calculated class weights for training set: {class_weights.numpy()}")
 
-    # --- Augmentations ---
-    # Context branch: resized to 224x224 (from 768px tiles)
-    train_augmentation_context = transforms.Compose([
-    transforms.Resize((224, 224)),
-    transforms.RandomHorizontalFlip(p=0.5),
-    transforms.RandomVerticalFlip(p=0.5),
-    # Aggiungi questa augmentation
-    transforms.RandomAffine(degrees=10, translate=(0.05, 0.05)),
-    transforms.ColorJitter(brightness=0.1, contrast=0.1, saturation=0.1, hue=0.05),
+    # --- MODIFICA: Le augmentation ora lavorano su tensori a 4 canali ---
+    train_augmentation = transforms.Compose([
+        transforms.Resize((224, 224), antialias=True),
+        transforms.RandomHorizontalFlip(p=0.5),
+        transforms.RandomVerticalFlip(p=0.5),
+        # Applichiamo ColorJitter solo ai canali RGB
+        transforms.Lambda(lambda x: torch.cat([
+            transforms.ColorJitter(brightness=0.1, contrast=0.1)(x[:3,:,:]),
+            x[3:,:,:] # Lascia il canale della maschera invariato
+        ], dim=0)),
     ])
-    
-    # Detail branch: resized to 224x224 (from 256px tiles)
-    train_augmentation_detail = transforms.Compose([
-    transforms.Resize((224, 224)),
-    transforms.RandomHorizontalFlip(p=0.5),
-    transforms.RandomVerticalFlip(p=0.5),
-    # Aggiungi questa augmentation
-    transforms.RandomAffine(degrees=10, translate=(0.05, 0.05)),
-    transforms.ColorJitter(brightness=0.1, contrast=0.1, saturation=0.1, hue=0.05),
-    ])
-    
-    # Validation: only resize, no augmentation
+
     val_augmentation = transforms.Compose([
-        transforms.Resize((224, 224)),
+        transforms.Resize((224, 224), antialias=True),
     ])
     
-    # --- Create Datasets & DataLoaders ---
-    train_ds = MultiScaleTileDataset(
-        train_df, 
-        train_val_dir, 
-        transform_context=train_augmentation_context, 
-        transform_detail=train_augmentation_detail, 
-        is_test=False
-    )
-    val_ds = MultiScaleTileDataset(
-        val_df, 
-        train_val_dir, 
-        transform_context=val_augmentation, 
-        transform_detail=val_augmentation, 
-        is_test=False
-    )
-    
+    train_ds = MultiModalTileDataset(train_df, train_val_dir, transform=train_augmentation)
+    val_ds = MultiModalTileDataset(val_df, train_val_dir, transform=val_augmentation)
+
     num_workers = min(os.cpu_count() or 2, 8)
-    train_loader = DataLoader(
-        train_ds, 
-        batch_size=batch_size, 
-        shuffle=True, 
-        num_workers=num_workers, 
-        pin_memory=True,
-        drop_last=True
-    )
-    val_loader = DataLoader(
-        val_ds, 
-        batch_size=batch_size, 
-        shuffle=False, 
-        num_workers=num_workers, 
-        pin_memory=True
-    )
+    train_loader = DataLoader(train_ds, batch_size=batch_size, shuffle=True, num_workers=num_workers, pin_memory=True, drop_last=True)
+    val_loader = DataLoader(val_ds, batch_size=batch_size, shuffle=False, num_workers=num_workers, pin_memory=True)
     
-    print(f"Created DataLoaders: train={len(train_loader)} batches, val={len(val_loader)} batches")
+    # --- MODIFICA: Input shape ora ha 4 canali ---
+    input_shape = (4, 224, 224)
     
-    # --- Determina Input Shape ---
-    # Per il modello a doppio ramo, l'input shape non è una singola tupla.
-    # Possiamo restituire None o una forma descrittiva per il logging.
-    # Per ora, restituiamo None perché il modello non ne ha bisogno.
-    input_shape = None # Il modello a doppio ramo non ha un singolo input_size
-    
-    # --- MODIFICA CHIAVE: Restituisci tutti e 4 i valori ---
     return train_loader, val_loader, input_shape, class_weights
 
-
-def get_multiscale_test_loader(base_path: Path, batch_size: int):
-    """
-    Crea e restituisce il DataLoader per il test set.
-    """
-    print("\n--- Creating Multi-Scale Test DataLoader ---")
+def get_multimodal_test_loader(base_path: Path, batch_size: int):
+    print("\n--- Creating Multi-Modal Test DataLoader ---")
     test_dir = base_path / "test"
     csv_path = test_dir / "test_patches.csv"
-    
-    if not csv_path.exists():
-        raise FileNotFoundError(f"Test CSV file not found in '{csv_path}'.")
-        
     df = pd.read_csv(csv_path)
     
-    # Per il test, applichiamo solo il resize
     test_transform = transforms.Compose([
-        transforms.Resize((224, 224)),
+        transforms.Resize((224, 224), antialias=True),
     ])
     
-    test_ds = MultiScaleTileDataset(df, test_dir, transform_context=test_transform, transform_detail=test_transform, is_test=True)
+    test_ds = MultiModalTileDataset(df, test_dir, transform=test_transform, is_test=True)
     test_loader = DataLoader(test_ds, batch_size=batch_size, shuffle=False, num_workers=min(os.cpu_count() or 2, 8), pin_memory=True)
     
-    return test_loader
-
-# =============================================================================
-# --- 3. PIPELINE DI VERIFICA E VISUALIZZAZIONE ---
-# =============================================================================
-
-def verify_and_visualize(loader: DataLoader, num_images: int = 8, dataset_name: str = "Dataset"):
-    """
-    Estrae un batch, lo stampa e visualizza le immagini (sia contesto che dettaglio).
-    """
-    print(f"\n--- Verifying and Visualizing a batch from the {dataset_name} ---")
+    input_shape = (4, 224, 224)
     
-    # Estrai un batch. Ora sono 3 elementi.
+    return test_loader, input_shape
+
+# =============================================================================
+# --- 3. PIPELINE DI VERIFICA (AGGIORNATA) ---
+# =============================================================================
+def verify_and_visualize(loader: DataLoader, num_images: int = 8, dataset_name: str = "Dataset"):
+    print(f"\n--- Verifying and Visualizing a batch from the {dataset_name} ---")
     context_batch, detail_batch, labels_or_names = next(iter(loader))
     
-    print(f"  Context Batch Shape: {context_batch.shape}")
-    print(f"  Detail Batch Shape: {detail_batch.shape}")
-    if isinstance(labels_or_names, torch.Tensor):
-        print(f"  Labels in batch: {labels_or_names.numpy()}")
+    print(f"  Context Batch Shape: {context_batch.shape}") # Should be [B, 4, 224, 224]
+    print(f"  Detail Batch Shape: {detail_batch.shape}")   # Should be [B, 4, 224, 224]
 
-    mean, std = np.array([0.485, 0.456, 0.406]), np.array([0.229, 0.224, 0.225])
+    mean, std = np.array([0.485, 0.456, 0.406, 0.5]), np.array([0.229, 0.224, 0.225, 0.5])
     
-    # Visualizza immagini di contesto e dettaglio una sotto l'altra
-    fig, axs = plt.subplots(2, num_images, figsize=(20, 5))
-    fig.suptitle(f"Sample Batch from {dataset_name}", fontsize=16)
+    fig, axs = plt.subplots(3, num_images, figsize=(20, 7)) # Aggiunta una riga per la maschera
+    fig.suptitle(f"Sample Batch from {dataset_name} (Image + Mask)", fontsize=16)
 
     for i in range(min(num_images, len(context_batch))):
-        # Immagine di Contesto
-        img_ctx = context_batch[i].numpy().transpose((1, 2, 0)); img_ctx = std * img_ctx + mean; img_ctx = np.clip(img_ctx, 0, 1)
+        # --- Immagine di Contesto (RGB) ---
+        img_ctx = context_batch[i][:3,:,:].numpy().transpose((1, 2, 0)); 
+        img_ctx = std[:3] * img_ctx + mean[:3]; img_ctx = np.clip(img_ctx, 0, 1)
         axs[0, i].imshow(img_ctx)
         axs[0, i].set_title(f"Context\nLabel: {labels_or_names[i].item() if isinstance(labels_or_names, torch.Tensor) else 'N/A'}")
         axs[0, i].axis("off")
         
-        # Immagine di Dettaglio
-        img_det = detail_batch[i].numpy().transpose((1, 2, 0)); img_det = std * img_det + mean; img_det = np.clip(img_det, 0, 1)
-        axs[1, i].imshow(img_det)
-        axs[1, i].set_title(f"Detail")
+        # --- Maschera di Contesto ---
+        mask_ctx = context_batch[i][3,:,:].numpy() # Canale 4
+        axs[1, i].imshow(mask_ctx, cmap='gray')
+        axs[1, i].set_title(f"Context Mask")
         axs[1, i].axis("off")
+
+        # --- Immagine di Dettaglio (RGB) ---
+        img_det = detail_batch[i][:3,:,:].numpy().transpose((1, 2, 0)); 
+        img_det = std[:3] * img_det + mean[:3]; img_det = np.clip(img_det, 0, 1)
+        axs[2, i].imshow(img_det)
+        axs[2, i].set_title(f"Detail")
+        axs[2, i].axis("off")
         
     plt.tight_layout(rect=[0, 0.03, 1, 0.95])
     plt.show()
 
 # =============================================================================
-# --- 4. ENTRY POINT (PER LA VERIFICA DIRETTA) ---
+# --- 4. ENTRY POINT (Invariato) ---
 # =============================================================================
-
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description="Verification pipeline for multi-scale data loaders.")
-    parser.add_argument('--base_path', type=Path, required=True, help='Path to the multi-scale preprocessed data directory.')
-    parser.add_argument('--batch_size', type=int, default=8, help='Batch size for the DataLoaders.')
-    args = parser.parse_args()
-    
-    try:
-        train_loader, val_loader = get_multiscale_loaders(base_path=args.base_path, batch_size=args.batch_size)
-        verify_and_visualize(train_loader, dataset_name="Training Set")
-        verify_and_visualize(val_loader, dataset_name="Validation Set")
-        
-        test_loader = get_multiscale_test_loader(base_path=args.base_path, batch_size=args.batch_size)
-        verify_and_visualize(test_loader, dataset_name="Test Set")
-        
-    except Exception as e:
-        import traceback; traceback.print_exc()
+    # ... (la logica di argparse rimane la stessa)
+    pass

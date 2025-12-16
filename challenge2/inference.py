@@ -8,7 +8,7 @@ from torch.utils.data import DataLoader
 import tqdm
 
 # Assumiamo che questi file esistano e siano importabili
-import multiscale_pipeline as data_loaders
+import mil_pipeline as data_loaders
 import models
 # =============================================================================
 # --- FUNZIONE PRINCIPALE DI INFERENZA ---
@@ -32,7 +32,7 @@ def make_inference(
     
     # 1. Carica i dati del test set
     try:
-        test_loader = data_loaders.get_multiscale_test_loader(
+        test_loader = data_loaders.get_mil_loaders(
             base_path=base_path,
             batch_size=batch_size
         )

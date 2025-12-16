@@ -14,25 +14,30 @@ def train_one_epoch(model, train_loader, criterion, optimizer, scaler, device, l
     model.train()
     running_loss = 0.0
     all_predictions = []
-    all_targets = []
+    all_labels = []
+    
+    # --- OTTIMIZZAZIONE: Aggiungiamo il numero totale di campioni processati ---
+    samples_processed = 0
 
     pbar = tqdm(train_loader, desc=f"Training Epoch", leave=False)
     
-    # --- MODIFICA 1: Spacchetta correttamente i 3 elementi dal DataLoader ---
-    for batch_idx, (context_batch, detail_batch, targets) in enumerate(pbar):
+    for bags, labels in pbar:
         
-        # Sposta i dati sul device
-        context_batch, detail_batch, targets = context_batch.to(device), detail_batch.to(device), targets.to(device)
+        labels = labels.to(device)
+        bags_on_device = [b.to(device) for b in bags]
         
+        # --- OTTIMIZZAZIONE: Usa set_to_none=True ---
         optimizer.zero_grad(set_to_none=True)
 
         with torch.amp.autocast(device_type=device.type, enabled=(device.type == 'cuda')):
-            # Passa i due tensori di immagine come una tupla al modello
-            logits = model((context_batch, detail_batch))
-            loss = criterion(logits, targets)
+            logits = model(bags_on_device)
+            # Se un batch non ha prodotto output (es. tutti i tile corrotti), saltalo
+            if logits.size(0) == 0:
+                continue
+            loss = criterion(logits, labels)
 
-            # Aggiungi regolarizzazione (se presente)
             if l1_lambda > 0 or l2_lambda > 0:
+                # (La tua logica di regolarizzazione è corretta)
                 l1_norm = sum(p.abs().sum() for p in model.parameters())
                 l2_norm = sum(p.pow(2).sum() for p in model.parameters())
                 loss = loss + l1_lambda * l1_norm + l2_lambda * l2_norm
@@ -41,20 +46,32 @@ def train_one_epoch(model, train_loader, criterion, optimizer, scaler, device, l
         scaler.step(optimizer)
         scaler.update()
 
-        batch_size = targets.size(0)
-        running_loss += loss.item() * batch_size
+        # --- BUG FIX: Calcolo della loss corretto ---
+        # Sommiamo la loss totale del batch (loss.item() è già la media del batch)
+        # Moltiplichiamo per il numero di campioni nel batch per ottenere la somma.
+        num_in_batch = labels.size(0)
+        running_loss += loss.item() * num_in_batch
+        samples_processed += num_in_batch
+        # -------------------------------------------
+
         predictions = logits.argmax(dim=1)
         all_predictions.append(predictions.cpu().numpy())
-        all_targets.append(targets.cpu().numpy())
+        all_labels.append(labels.cpu().numpy())
 
-    epoch_loss = running_loss / len(train_loader.dataset)
-    all_targets_np = np.concatenate(all_targets)
+    # --- BUG FIX: Normalizzazione corretta della loss ---
+    # Dividi la somma totale delle loss per il numero totale di campioni
+    epoch_loss = running_loss / samples_processed if samples_processed > 0 else 0.0
+    # ----------------------------------------------------
+
+    if not all_labels: # Se il dataset era vuoto o tutti i batch sono stati saltati
+        return epoch_loss, 0.0
+
+    all_labels_np = np.concatenate(all_labels)
     all_predictions_np = np.concatenate(all_predictions)
-    epoch_f1 = f1_score(all_targets_np, all_predictions_np, average='weighted')
+    epoch_f1 = f1_score(all_labels_np, all_predictions_np, average='weighted')
 
-    # Log della confusion matrix (opzionale ma utile)
     if comet_experiment:
-        cm = confusion_matrix(all_targets_np, all_predictions_np)
+        cm = confusion_matrix(all_labels_np, all_predictions_np)
         comet_experiment.log_confusion_matrix(matrix=cm, labels=[str(i) for i in range(cm.shape[0])], name="Train Confusion Matrix")
 
     return epoch_loss, epoch_f1
@@ -62,6 +79,7 @@ def train_one_epoch(model, train_loader, criterion, optimizer, scaler, device, l
 # =============================================================================
 # --- FUNZIONE DI VALIDAZIONE PER EPOCA (CORRETTA PER MULTI-SCALA) ---
 # =============================================================================
+
 def validate_one_epoch(model, val_loader, criterion, device, debug_mode=True):
     model.eval()
     running_loss = 0.0

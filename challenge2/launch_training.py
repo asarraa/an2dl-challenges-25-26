@@ -1,10 +1,12 @@
 import os
 import torch
 import torch.nn as nn
+import mil_pipeline
 import multiscale_pipeline
 from torchsummary import summary
 from torch.utils.tensorboard import SummaryWriter
 from comet_ml import start
+import mil_model
 
 # Local Imports
 import config
@@ -93,14 +95,13 @@ def instantiate_model(model_name, current_model_cfg, data_input_shape, device_ob
         for param in invalid_params:
             if param in cfg_copy:
                 del cfg_copy[param]
-        # Map parameter names to what DualBranchResNet expects
-        if 'backbone' in cfg_copy:
-            cfg_copy['backbone_name'] = cfg_copy.pop('backbone')
-        if 'freeze_backbone' in cfg_copy:
-            cfg_copy['freeze_backbones'] = cfg_copy.pop('freeze_backbone')
+        # Map 'use_pretrained' to 'pretrained' if needed
         if 'pretrained' not in cfg_copy:
             cfg_copy['pretrained'] = True
         model = models.DualBranchResNet(**cfg_copy)
+    elif model_name == "AttentionMIL":
+        cfg_copy = current_model_cfg.copy()
+        model = mil_model.AttentionMIL(**cfg_copy)
     # Move model to device BEFORE calling summary (torchsummary requires this)
     model = model.to(device_obj)
 
@@ -162,7 +163,7 @@ def start_training(model_name="CNN", model_params=None, training_params=None, de
     # Convert to Path if string
     data_path = Path(data_path)
 
-    train_loader, val_loader, _, class_weights = multiscale_pipeline.get_multiscale_loaders(
+    train_loader, val_loader, _, class_weights = mil_pipeline.get_mil_loaders(
         base_path=data_path,
         batch_size=batch_size
     )
@@ -229,6 +230,8 @@ def start_training(model_name="CNN", model_params=None, training_params=None, de
         current_model_cfg = config.HISTOLOGY_DENSENET_DEFAULTS.copy()
     elif model_name == "MultiScale":
         current_model_cfg = config.MULTISCALE_DEFAULTS.copy()
+    elif model_name == "AttentionMIL":
+        current_model_cfg = config.MIL_DEFAULT.copy()
         
     # Update with whatever you passed in (if anything)
     if training_params:

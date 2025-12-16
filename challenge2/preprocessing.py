@@ -47,6 +47,42 @@ def load_mask_cv2(path):
 # =============================================================================
 # 2. PREPROCESSING LOGIC (SLIME REMOVAL & ARTIFACTS)
 # =============================================================================
+def is_outlier(img_bgr):
+    hsv = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2HSV)
+    lower_green = np.array([35, 50, 50])
+    upper_green = np.array([90, 255, 255])
+    mask_slime = cv2.inRange(hsv, lower_green, upper_green)
+    if cv2.countNonZero(mask_slime) > 50:
+        return True
+    
+    mask_foreground = (hsv[:,:,1] > 15) & (hsv[:,:,2] < 250)
+    foreground_pixels = np.count_nonzero(mask_foreground)
+    
+    if foreground_pixels < 100: return False
+
+    h_foreground = hsv[:,:,0][mask_foreground]
+
+    # Count pixels by Hue range
+    count_tissue = np.count_nonzero((h_foreground >= 125) & (h_foreground <= 175))
+    count_ink = np.count_nonzero((h_foreground >= 80) & (h_foreground < 125))
+    count_shrek_skin = np.count_nonzero((h_foreground >= 20) & (h_foreground < 80))
+    count_shrek_clothes = np.count_nonzero((h_foreground >= 10) & (h_foreground < 20))
+    count_shrek_total = count_shrek_skin + count_shrek_clothes
+    
+    ratio_tissue = count_tissue / foreground_pixels
+    ratio_ink = count_ink / foreground_pixels
+    ratio_shrek = count_shrek_total / foreground_pixels
+    shrek_dominance = (count_shrek_total / count_tissue) if count_tissue > 0 else 999.0
+
+    # Rules
+    if ratio_ink > ratio_shrek and ratio_ink > 0.1: return False
+    if ratio_shrek > 0.4 and shrek_dominance > 4.0: return True
+    if ratio_tissue > 0.05: return False
+    if ratio_shrek > 0.3: return True
+
+    return False
+    
+
 def contains_slime(img_bgr, threshold=50):
     hsv = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2HSV)
     lower_green = np.array([35, 50, 50])
