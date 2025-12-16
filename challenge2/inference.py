@@ -1,280 +1,191 @@
-import config
 import torch
-import pandas as pd
-from lazy_loaders import _resolve_paths, get_test_loaders
-import os
-from pathlib import Path
-from typing import Dict, Optional, Tuple, List
-import models
-from torch.utils.data import DataLoader 
-import numpy as np
 import torch.nn.functional as F
+import pandas as pd
+import numpy as np
+from pathlib import Path
+from typing import Dict, Tuple, List
+from torch.utils.data import DataLoader 
+import tqdm
 
+# Assumiamo che questi file esistano e siano importabili
+import multiscale_pipeline as data_loaders
+import models
+# =============================================================================
+# --- FUNZIONE PRINCIPALE DI INFERENZA ---
+# =============================================================================
 
-def make_inference(loader, device, input_shape, model_path, model_name, experiment_id, base_path, inference_type="weighted_majority_vote"):
-    """
-    Esegue inferenza e aggregazione.
-    inference_type: "weighted_majority_vote" (Media pesata) o "mil" (Max Pooling).
-    """
-    
-    print(f"[INFO] Starting inference with mode: {inference_type}")
-    
-    inv_label_map = {v: k for k, v in config.LABEL_MAP.items()}
-
-    _, _, csv_path = _resolve_paths(base_path=base_path, add_mask_channel=False, is_test=True)
-
-    # Read CSV metadata into memory
-    df_test = pd.read_csv(csv_path)
-
-    if "weight" not in df_test.columns:
-        print("[WARNING] Colonna 'weight' non trovata in test_patches.csv. Uso peso 1.0 per tutti.")
-        df_test["weight"] = 1.0
-
-    # Preload checkpoint metadata
-    ckpt, state_dict = load_checkpoint(model_path, map_location="cpu")
-    ckpt_channels = infer_conv1_in_channels(state_dict)
-
-    model = load_model(
-        model_path,
-        input_shape=input_shape,
-        num_classes=len(config.LABEL_MAP),
-        model_name=model_name,
-        state_dict=state_dict,
-        ckpt=ckpt,
-        ckpt_channels=ckpt_channels,
-    )
-    model.to(device)
-    
-    # 1. Otteniamo le probabilità per ogni tile
-    num_classes = len(config.LABEL_MAP)
-    tile_preds = predict2(model, loader, device, num_classes)
-    prob_cols = [f"prob_{i}" for i in range(num_classes)]
-
-    # 2. Scegliamo la strategia di aggregazione (Bag-level inference)
-    if inference_type == "weighted_majority_vote":
-        # Strategia attuale: Media pesata delle probabilità
-        submission, slide_map = weighted_mean_aggregation(tile_preds, df_test, prob_cols, inv_label_map)
-    
-    elif inference_type == "mil":
-        # Strategia MIL: Max Pooling (il tile più forte decide per la slide)
-        submission, slide_map = mil_aggregation(tile_preds, df_test, prob_cols, inv_label_map)
-        
-    else:
-        raise ValueError(f"Inference type '{inference_type}' non supportato. Usa 'weighted_majority_vote' o 'mil'.")
-
-    # Salvataggio
-    output = Path(base_path+"/"+experiment_id+"_submission.csv")
-    output.parent.mkdir(parents=True, exist_ok=True)
-    submission.to_csv(output, index=False)
-    print(f"[INFO] Saved submission to {output}")
-
-
-def load_model(
+def make_inference(
     model_path: Path,
-    input_shape: Tuple[int, int, int],
-    num_classes: int,
-    model_name: Optional[str],
-    state_dict: Optional[dict] = None,
-    ckpt: Optional[dict] = None,
-    ckpt_channels: Optional[int] = None,
-) -> torch.nn.Module:
-    ckpt, loaded_state_dict = load_checkpoint(model_path) if state_dict is None else (ckpt, state_dict)
-
-    cfg = {}
-    if isinstance(ckpt, dict):
-        if isinstance(ckpt.get("config"), dict):
-            cfg.update(ckpt["config"])
-        if isinstance(ckpt.get("model_architecture"), dict):
-            cfg.update(ckpt["model_architecture"])
-
-    name = pick_model_name(model_name, ckpt or {}, loaded_state_dict)
-    c, h, w = input_shape
-
-    if name == "CNN":
-        model_cfg = config.CNN_DEFAULTS.copy()
-        model_cfg.update({k: v for k, v in cfg.items() if k in model_cfg})
-        model_cfg["input_shape"] = (c, h, w)
-        model_cfg["num_classes"] = num_classes
-        model = models.CNN(**model_cfg)
-    elif name == "EfficientNet":
-        model_cfg = config.EFFICIENTNET_DEFAULTS.copy()
-        model_cfg.update({k: v for k, v in cfg.items() if k in model_cfg})
-        model_cfg["input_shape"] = (c, h, w)
-        model_cfg["num_classes"] = num_classes
-        model = models.EfficientNetModel(**model_cfg)
-    elif name == "HistologyResNet":
-        if ckpt_channels == 4 or c == 4:
-            raise ValueError("[ERROR] Tried using HistologyResNet with 4 input channels, which is obsolete.")
-        else:
-            model_cfg = config.RESNET_DEFAULTS.copy()
-            model_cfg.update({k: v for k, v in cfg.items() if k in model_cfg})
-            model_cfg["num_classes"] = num_classes
-            model_cfg["input_channels"] = c
-            model = models.HistologyResNet(**model_cfg)
-    elif name == "FineTunedResNet50":
-        model_cfg = config.RESNET50_FINETUNE_DEFAULTS.copy()
-        model_cfg.update({k: v for k, v in cfg.items() if k in model_cfg})
-        model_cfg["num_classes"] = num_classes
-        model_cfg["input_channels"] = c
-        model = models.FineTunedResNet50(**model_cfg)
-    elif name == "HistologyDenseNet":
-        model_cfg = config.HISTOLOGY_DENSENET_DEFAULTS.copy()
-        model_cfg.update({k: v for k, v in cfg.items() if k in model_cfg})
-        model_cfg["num_classes"] = num_classes
-        model_cfg["input_channels"] = c
-        model = models.HistologyDenseNet(**model_cfg)
-    elif name == "FineTunedResNet18":
-        model_cfg = config.RESNET18_FINETUNE_DEFAULTS.copy()
-        model_cfg.update({k: v for k, v in cfg.items() if k in model_cfg})
-        model_cfg["num_classes"] = num_classes
-        model_cfg["input_channels"] = c
-        model = models.FineTunedResNet18(**model_cfg)
-    else:
-        raise ValueError(f"Unsupported model '{name}'. Use --model-name to pick a valid one.")
-
-    model.load_state_dict(loaded_state_dict)
-    return model
-
-
-def load_checkpoint(path: Path, map_location: str = "cpu"):
-    ckpt = torch.load(path, map_location=map_location)
-    state_dict = ckpt.get("model_state_dict", ckpt if isinstance(ckpt, dict) else {})
-    state_dict = {k.replace("module.", ""): v for k, v in state_dict.items()}
-    return ckpt, state_dict
-
-
-def infer_conv1_in_channels(state_dict: dict) -> Optional[int]:
-    for key, value in state_dict.items():
-        if key.endswith("conv1.weight") and hasattr(value, "shape"):
-            return value.shape[1]
-    return None
-
-
-# ------------------------------
-# Inference Helpers
-# ------------------------------
-
-def predict2(model: torch.nn.Module, loader: DataLoader, device: torch.device, num_classes: int) -> pd.DataFrame:
+    base_path: Path,
+    model_name: str,
+    device: torch.device,
+    batch_size: int,
+    experiment_id: str,
+    inference_type: str = "weighted_majority_vote"
+):
     """
-    Esegue l'inferenza restituendo le probabilità (Softmax) per ogni classe.
+    Esegue l'intero pipeline di inferenza: caricamento dati, caricamento modello,
+    predizione per tile e aggregazione per slide.
+    """
+    print(f"\n[INFO] Starting inference for experiment '{experiment_id}'...")
+    print(f"[INFO] Using aggregation mode: '{inference_type}'")
+    
+    # 1. Carica i dati del test set
+    try:
+        test_loader = data_loaders.get_multiscale_test_loader(
+            base_path=base_path,
+            batch_size=batch_size
+        )
+    except Exception as e:
+        print(f"❌ ERROR: Failed to create test data loader. {e}")
+        return
+
+    # 2. Carica il modello addestrato
+    # --- MODIFICA 1: Semplificata la logica di caricamento del modello ---
+    try:
+        # Prima definiamo la mappa delle label per la submission finale
+        train_csv_path = base_path / "train" / "train_patches.csv"
+        if not train_csv_path.exists():
+            raise FileNotFoundError("train_patches.csv not found, cannot create inverse label map.")
+        
+        df_train = pd.read_csv(train_csv_path)
+        unique_labels = sorted(df_train['label'].unique())
+        label_map = {label_str: i for i, label_str in enumerate(unique_labels)}
+        inv_label_map = {v: k for k, v in label_map.items()}
+        num_classes = len(label_map)
+
+        print(f"[INFO] Loading model '{model_name}' with {num_classes} classes.")
+        if model_name in ("MultiScale", "DualBranchResNet"):
+            model = models.DualBranchResNet(num_classes=num_classes)
+        else:
+            # Aggiungi qui la logica per altri modelli se necessario
+            raise ValueError(f"Unsupported model name '{model_name}' for this script.")
+
+        print(f"[INFO] Loading weights from: '{model_path}'")
+        model.load_state_dict(torch.load(model_path, map_location=device))
+        model.to(device)
+        print("[INFO] Model loaded successfully.")
+
+    except Exception as e:
+        print(f"❌ ERROR: Failed to load model. {e}")
+        return
+
+    # 3. Esegui le predizioni per ogni tile
+    tile_preds_df = predict_tiles(model, test_loader, device, num_classes)
+
+    # 4. Aggrega i risultati a livello di slide
+    meta_df = pd.read_csv(base_path / "test" / "test_patches.csv")
+
+    if inference_type == "weighted_majority_vote":
+        submission_df = weighted_mean_aggregation(tile_preds_df, meta_df, inv_label_map)
+    elif inference_type == "mil":
+        submission_df = mil_aggregation(tile_preds_df, meta_df, inv_label_map)
+    else:
+        raise ValueError(f"Inference type '{inference_type}' non supportato.")
+
+    # 5. Salva la submission
+    output_path = Path(f"./{experiment_id}_submission.csv") # Salva nella directory corrente
+    submission_df.to_csv(output_path, index=False)
+    print(f"\n✅ Inference complete. Submission file saved to '{output_path}'")
+
+
+# =============================================================================
+# --- HELPERS DI INFERENZA ---
+# =============================================================================
+
+def predict_tiles(model: torch.nn.Module, loader: DataLoader, device: torch.device, num_classes: int) -> pd.DataFrame:
+    """
+    Esegue l'inferenza per ogni tile nel DataLoader e restituisce un DataFrame con le probabilità.
     """
     model.eval()
-    names = []
+    all_names = []
     all_probs = []
 
     with torch.no_grad():
-        for batch in loader:
-            if len(batch) == 3:
-                imgs, batch_names, _ = batch 
-            else:
-                imgs, batch_names = batch
-
-            imgs = imgs.to(device)
-            logits = model(imgs)
+        for context_batch, detail_batch, names_batch in tqdm.tqdm(loader, desc="Predicting on tiles"):
+            # --- MODIFICA 2: Gestione esplicita dell'input multi-scala ---
+            context_batch = context_batch.to(device)
+            detail_batch = detail_batch.to(device)
+            
+            # Passa la tupla di tensori al modello
+            logits = model((context_batch, detail_batch))
             probs = F.softmax(logits, dim=1)
             
-            names.extend(batch_names)
+            all_names.extend(names_batch)
             all_probs.append(probs.cpu().numpy())
 
     all_probs = np.concatenate(all_probs, axis=0)
-    data = {"sample_index": names}
+    
+    # Crea il DataFrame con i risultati
     prob_cols = [f"prob_{i}" for i in range(num_classes)]
+    data = {"sample_index": all_names}
     for i, col in enumerate(prob_cols):
         data[col] = all_probs[:, i]
 
     return pd.DataFrame(data)
 
 
-def weighted_mean_aggregation(
-    tile_df: pd.DataFrame, 
-    meta_df: pd.DataFrame, 
-    prob_cols: List[str], 
-    inv_label_map: Dict[int, str]
-) -> Tuple[pd.DataFrame, Dict]:
-    """
-    Aggregazione 'Weighted Majority Vote' (Media Pesata delle Probabilità).
-    Smussa i picchi e decide in base alla "massa" di evidenza.
-    """
-    merged = tile_df.merge(meta_df[["sample_index", "original_sample", "weight"]], on="sample_index", how="left")
+def weighted_mean_aggregation(tile_df: pd.DataFrame, meta_df: pd.DataFrame, inv_label_map: Dict[int, str]) -> pd.DataFrame:
+    """Aggregazione tramite media delle probabilità."""
+    # --- MODIFICA 3: Semplificata la logica di merge e aggregazione ---
+    merged = pd.merge(tile_df, meta_df[['sample_index', 'original_sample']], on="sample_index")
     
-    if merged["weight"].isnull().any():
-        merged["weight"] = merged["weight"].fillna(1.0)
-
-    # Numeratore: Probabilità * Peso
-    weighted_probs = merged[prob_cols].multiply(merged["weight"], axis=0)
-    weighted_probs["original_sample"] = merged["original_sample"]
+    prob_cols = [col for col in tile_df.columns if col.startswith('prob_')]
     
-    # Somma per Slide (equivale alla media pesata ai fini dell'argmax)
-    grouped_sums = weighted_probs.groupby("original_sample")[prob_cols].sum()
+    # Raggruppa per slide originale e calcola la media delle probabilità
+    slide_probs = merged.groupby("original_sample")[prob_cols].mean()
     
-    # Argmax
-    best_cols = grouped_sums.idxmax(axis=1)
+    # Trova la classe con la probabilità media più alta per ogni slide
+    best_class_idx = slide_probs.idxmax(axis=1).str.replace('prob_', '').astype(int)
     
-    rows = []
-    slide_map = {}
-    for slide_id, col_name in best_cols.items():
-        pred_idx = prob_cols.index(col_name)
-        label_str = inv_label_map[pred_idx]
-        slide_map[slide_id] = (pred_idx, label_str)
-        rows.append({"sample_index": slide_id, "label": label_str})
-        
-    return pd.DataFrame(rows).sort_values("sample_index"), slide_map
+    submission_df = pd.DataFrame({
+        "sample_index": best_class_idx.index,
+        "label": best_class_idx.map(inv_label_map)
+    }).sort_values("sample_index")
+    
+    return submission_df
 
 
-def mil_aggregation(
-    tile_df: pd.DataFrame, 
-    meta_df: pd.DataFrame, 
-    prob_cols: List[str], 
-    inv_label_map: Dict[int, str]
-) -> Tuple[pd.DataFrame, Dict]:
-    """
-    Aggregazione 'MIL' (Multiple Instance Learning - Max Pooling).
-    La classe della slide è determinata dal tile con la probabilità più alta (pesata) per quella classe.
-    Cerca il "witness" (testimone) più forte.
-    """
-    # 1. Merge
-    merged = tile_df.merge(meta_df[["sample_index", "original_sample", "weight"]], on="sample_index", how="left")
-    
-    if merged["weight"].isnull().any():
-        merged["weight"] = merged["weight"].fillna(1.0)
+def mil_aggregation(tile_df: pd.DataFrame, meta_df: pd.DataFrame, inv_label_map: Dict[int, str]) -> pd.DataFrame:
+    """Aggregazione tramite Max Pooling (Multiple Instance Learning)."""
+    merged = pd.merge(tile_df, meta_df[['sample_index', 'original_sample']], on="sample_index")
+    prob_cols = [col for col in tile_df.columns if col.startswith('prob_')]
 
-    # 2. Applichiamo comunque il peso per filtrare artefatti (es. sfondo nero con peso basso)
-    # Se il peso è 0, la probabilità diventa 0 e non verrà selezionata dal Max Pooling.
-    weighted_probs = merged[prob_cols].multiply(merged["weight"], axis=0)
-    weighted_probs["original_sample"] = merged["original_sample"]
-    
-    # 3. Max Pooling per Slide: Prendi il valore MASSIMO per ogni classe tra i tile della slide
-    # Esempio: Se una slide ha 1000 tile sani e 1 tile tumore (prob=0.9), il max per tumore sarà 0.9.
-    grouped_max = weighted_probs.groupby("original_sample")[prob_cols].max()
-    
-    # 4. Argmax tra le classi basato sui massimi
-    best_cols = grouped_max.idxmax(axis=1)
-    
-    rows = []
-    slide_map = {}
-    for slide_id, col_name in best_cols.items():
-        pred_idx = prob_cols.index(col_name)
-        label_str = inv_label_map[pred_idx]
-        slide_map[slide_id] = (pred_idx, label_str)
-        rows.append({"sample_index": slide_id, "label": label_str})
-        
-    return pd.DataFrame(rows).sort_values("sample_index"), slide_map
+    # Raggruppa per slide e trova la probabilità MASSIMA per ogni classe
+    slide_max_probs = merged.groupby("original_sample")[prob_cols].max()
 
+    # Trova la classe con la probabilità massima più alta
+    best_class_idx = slide_max_probs.idxmax(axis=1).str.replace('prob_', '').astype(int)
 
-def pick_model_name(user_choice: Optional[str], ckpt: dict, state_dict: dict) -> str:
-    if user_choice: return user_choice
-    for key in ("model_name",):
-        if key in ckpt: return ckpt[key]
-    cfg = ckpt.get("config") or {}
-    if isinstance(cfg, dict) and "model_name" in cfg: return cfg["model_name"]
-    inferred = infer_model_from_state_dict(state_dict)
-    if inferred: return inferred
-    return config.MODEL_NAME
+    submission_df = pd.DataFrame({
+        "sample_index": best_class_idx.index,
+        "label": best_class_idx.map(inv_label_map)
+    }).sort_values("sample_index")
+    
+    return submission_df
 
-def infer_model_from_state_dict(state_dict: dict) -> Optional[str]:
-    keys = list(state_dict.keys())
-    if any(k.startswith("backbone.layer1") or k.startswith("backbone.conv1") for k in keys): return "FineTunedResNet50"
-    if any(k.startswith("model.layer1") or k.startswith("model.conv1") for k in keys): return "HistologyResNet"
-    if any(k.startswith("features.") for k in keys): return "CNN"
-    if any("units.0" in k or "MBConvBlock" in k for k in keys): return "EfficientNet"
-    return None
+# =============================================================================
+# --- Esempio di come chiamare la funzione nel tuo notebook ---
+# =============================================================================
+
+# if __name__ == '__main__':
+#     # Questo blocco serve solo per un esempio di esecuzione
+#     
+#     # 1. Definisci i parametri
+#     MODEL_PATH = Path("./fit_models/NOME_DEL_TUO_ESPERIMENTO_best_model.pth")
+#     BASE_DATA_PATH = Path("/path/to/your/multiscale_preprocessed_data")
+#     MODEL_NAME = "MultiScale" # o "DualBranchResNet"
+#     BATCH_SIZE = 32
+#     EXPERIMENT_ID = "multiscale_inference_01"
+#     DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+#
+#     # 2. Chiama la funzione principale di inferenza
+#     make_inference(
+#         model_path=MODEL_PATH,
+#         base_path=BASE_DATA_PATH,
+#         model_name=MODEL_NAME,
+#         device=DEVICE,
+#         batch_size=BATCH_SIZE,
+#         experiment_id=EXPERIMENT_ID,
+#         inference_type="weighted_majority_vote" # o "mil"
+#     )
