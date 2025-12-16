@@ -736,3 +736,52 @@ class FineTunedResNet18(nn.Module):
     def forward(self, x):
         features = self.backbone(x)
         return self.classifier(features)
+    
+
+
+class DualBranchResNet(nn.Module):
+    def __init__(self, num_classes: int, backbone_name: str = 'resnet18', pretrained: bool = True, freeze_backbones: bool = False):
+        super().__init__()
+        
+        # --- Ramo 1: Contesto (es. da tile 768px) ---
+        self.context_backbone = models.get_model(backbone_name, weights='IMAGENET1K_V1' if pretrained else None)
+        # Rimuoviamo il classificatore originale
+        context_features_in = self.context_backbone.fc.in_features
+        self.context_backbone.fc = nn.Identity()
+
+        # --- Ramo 2: Dettaglio (es. da tile 256px) ---
+        self.detail_backbone = models.get_model(backbone_name, weights='IMAGENET1K_V1' if pretrained else None)
+        detail_features_in = self.detail_backbone.fc.in_features
+        self.detail_backbone.fc = nn.Identity()
+        
+        if freeze_backbones:
+            for param in self.context_backbone.parameters():
+                param.requires_grad = False
+            for param in self.detail_backbone.parameters():
+                param.requires_grad = False
+
+        # --- Testa di Classificazione ---
+        # Concateniamo i feature vector dei due rami
+        self.classifier = nn.Sequential(
+            nn.BatchNorm1d(context_features_in + detail_features_in),
+            nn.Linear(context_features_in + detail_features_in, 512),
+            nn.ReLU(),
+            nn.Dropout(0.5),
+            nn.Linear(512, num_classes)
+        )
+
+    def forward(self, x):
+        # L'input x è una tupla: (tensor_context, tensor_detail)
+        x_context, x_detail = x
+        
+        # Estrai le feature da entrambi i rami
+        features_context = self.context_backbone(x_context)
+        features_detail = self.detail_backbone(x_detail)
+        
+        # Concatena le feature
+        combined_features = torch.cat([features_context, features_detail], dim=1)
+        
+        # Classifica usando il vettore combinato
+        output = self.classifier(combined_features)
+        
+        return output
