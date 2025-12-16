@@ -236,6 +236,14 @@ def start_training(model_name="CNN", model_params=None, training_params=None, de
     # -------------------------------------------------------
     # 2. INSTANTIATE (Using the merged configs)
     # -------------------------------------------------------
+        
+    if debug_mode:
+        print("[DEBUG] About to instantiate model...", flush=True)
+    # Instantiate Model
+    model = instantiate_model(model_name, current_model_cfg, data_input_shape, device_obj)
+    if debug_mode:
+        print("[DEBUG] Model instantiated successfully", flush=True) 
+    
     if checkpoint_path:
         print(f"📥 Loading weights from Phase 1: {checkpoint_path}")
         try:
@@ -253,13 +261,6 @@ def start_training(model_name="CNN", model_params=None, training_params=None, de
             print("Stopping to prevent training from scratch unintentionally.")
             return None, None, None # Interrompi se il checkpoint fallisce
         
-    if debug_mode:
-        print("[DEBUG] About to instantiate model...", flush=True)
-    # Instantiate Model
-    model = instantiate_model(model_name, current_model_cfg, data_input_shape, device_obj)
-    if debug_mode:
-        print("[DEBUG] Model instantiated successfully", flush=True) 
-    
     # Get criterion
     criterion = get_criterion_from_name(current_train_cfg['criterion_name'], device_obj, class_weights)
 
