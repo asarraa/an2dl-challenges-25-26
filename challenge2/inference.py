@@ -167,8 +167,7 @@ def mil_aggregation(tile_df: pd.DataFrame, meta_df: pd.DataFrame, inv_label_map:
 # =============================================================================
 # --- Esempio di come chiamare la funzione nel tuo notebook ---
 # =============================================================================
-
-# if __name__ == '__main__':
+#if __name__ == '__main__':
 #     # Questo blocco serve solo per un esempio di esecuzione
 #     
 #     # 1. Definisci i parametri

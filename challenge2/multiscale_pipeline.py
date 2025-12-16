@@ -112,20 +112,22 @@ def get_multiscale_loaders(
     # --- Augmentations ---
     # Context branch: resized to 224x224 (from 768px tiles)
     train_augmentation_context = transforms.Compose([
-        transforms.Resize((224, 224)),
-        transforms.RandomHorizontalFlip(p=0.5),
-        transforms.RandomVerticalFlip(p=0.5),
-        transforms.RandomRotation(degrees=15),
-        transforms.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.1, hue=0.05),
+    transforms.Resize((224, 224)),
+    transforms.RandomHorizontalFlip(p=0.5),
+    transforms.RandomVerticalFlip(p=0.5),
+    # Aggiungi questa augmentation
+    transforms.RandomAffine(degrees=10, translate=(0.05, 0.05)),
+    transforms.ColorJitter(brightness=0.1, contrast=0.1, saturation=0.1, hue=0.05),
     ])
     
     # Detail branch: resized to 224x224 (from 256px tiles)
     train_augmentation_detail = transforms.Compose([
-        transforms.Resize((224, 224)),
-        transforms.RandomHorizontalFlip(p=0.5),
-        transforms.RandomVerticalFlip(p=0.5),
-        transforms.RandomRotation(degrees=15),
-        transforms.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.1, hue=0.05),
+    transforms.Resize((224, 224)),
+    transforms.RandomHorizontalFlip(p=0.5),
+    transforms.RandomVerticalFlip(p=0.5),
+    # Aggiungi questa augmentation
+    transforms.RandomAffine(degrees=10, translate=(0.05, 0.05)),
+    transforms.ColorJitter(brightness=0.1, contrast=0.1, saturation=0.1, hue=0.05),
     ])
     
     # Validation: only resize, no augmentation
