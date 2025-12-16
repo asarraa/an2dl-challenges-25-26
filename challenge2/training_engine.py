@@ -21,16 +21,18 @@ def train_one_epoch(model, train_loader, criterion, optimizer, scaler, device, l
 
     pbar = tqdm(train_loader, desc=f"Training Epoch", leave=False)
     
-    for bags, labels in pbar:
+    # Multi-scale format: (context_batch, detail_batch, labels)
+    for context_batch, detail_batch, labels in pbar:
         
+        context_batch = context_batch.to(device)
+        detail_batch = detail_batch.to(device)
         labels = labels.to(device)
-        bags_on_device = [b.to(device) for b in bags]
         
         # --- OTTIMIZZAZIONE: Usa set_to_none=True ---
         optimizer.zero_grad(set_to_none=True)
 
         with torch.amp.autocast(device_type=device.type, enabled=(device.type == 'cuda')):
-            logits = model(bags_on_device)
+            logits = model((context_batch, detail_batch))
             # Se un batch non ha prodotto output (es. tutti i tile corrotti), saltalo
             if logits.size(0) == 0:
                 continue
