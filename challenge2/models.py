@@ -739,17 +739,17 @@ class FineTunedResNet18(nn.Module):
     
 
 
+
 class DualBranchResNet(nn.Module):
-    def __init__(self, num_classes: int, backbone_name: str = 'resnet18', pretrained: bool = True, freeze_backbones: bool = False):
+    def __init__(self, num_classes: int, backbone_name: str = 'resnet18', pretrained: bool = True, freeze_backbones: bool = False, dropout_rate: float = 0.5):
         super().__init__()
         
-        # --- Ramo 1: Contesto (es. da tile 768px) ---
+        # --- Ramo 1: Contesto ---
         self.context_backbone = models.get_model(backbone_name, weights='IMAGENET1K_V1' if pretrained else None)
-        # Rimuoviamo il classificatore originale
         context_features_in = self.context_backbone.fc.in_features
         self.context_backbone.fc = nn.Identity()
 
-        # --- Ramo 2: Dettaglio (es. da tile 256px) ---
+        # --- Ramo 2: Dettaglio ---
         self.detail_backbone = models.get_model(backbone_name, weights='IMAGENET1K_V1' if pretrained else None)
         detail_features_in = self.detail_backbone.fc.in_features
         self.detail_backbone.fc = nn.Identity()
@@ -760,28 +760,34 @@ class DualBranchResNet(nn.Module):
             for param in self.detail_backbone.parameters():
                 param.requires_grad = False
 
-        # --- Testa di Classificazione ---
-        # Concateniamo i feature vector dei due rami
+        # --- Testa di Classificazione ("Classifier Head") ---
+        # Questa è la struttura standard e più robusta.
+        
+        combined_features_dim = context_features_in + detail_features_in
+        
         self.classifier = nn.Sequential(
-            nn.BatchNorm1d(context_features_in + detail_features_in),
-            nn.Linear(context_features_in + detail_features_in, 512),
+            # 1. Primo blocco: riduce la dimensionalità e regolarizza
+            nn.Linear(combined_features_dim, 512),
+            nn.BatchNorm1d(512),
             nn.ReLU(),
-            nn.Dropout(0.5),
+            nn.Dropout(dropout_rate), # Dropout DOPO l'attivazione
+
+            # 2. Layer finale di output (Logits)
+            # Di solito non si applica dropout o attivazione direttamente prima dell'output
             nn.Linear(512, num_classes)
         )
 
     def forward(self, x):
-        # L'input x è una tupla: (tensor_context, tensor_detail)
         x_context, x_detail = x
         
-        # Estrai le feature da entrambi i rami
+        # Estrai le feature. Non applichiamo dropout qui.
         features_context = self.context_backbone(x_context)
         features_detail = self.detail_backbone(x_detail)
         
         # Concatena le feature
         combined_features = torch.cat([features_context, features_detail], dim=1)
         
-        # Classifica usando il vettore combinato
+        # Passa le feature combinate e pulite al classificatore
         output = self.classifier(combined_features)
         
         return output
