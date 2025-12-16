@@ -113,8 +113,11 @@ def fit(model, train_loader, val_loader, epochs, criterion, optimizer, scaler, d
     # --------------------------------------------------------------------
 
     for epoch in range(1, epochs + 1):
-        train_loss, train_f1 = train_one_epoch(...) # Chiamata invariata
-        val_loss, val_f1 = validate_one_epoch(...)   # Chiamata invariata
+        train_loss, train_f1 = train_one_epoch(
+            model, train_loader, criterion, optimizer, scaler, device, 
+            l1_lambda, l2_lambda, debug_mode=debug_mode, comet_experiment=comet_experiment
+        )
+        val_loss, val_f1 = validate_one_epoch(model, val_loader, criterion, device, debug_mode=debug_mode)
         
         training_history['train_loss'].append(train_loss)
         training_history['val_loss'].append(val_loss)
