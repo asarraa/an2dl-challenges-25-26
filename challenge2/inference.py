@@ -102,7 +102,7 @@ def predict_tiles(model: torch.nn.Module, loader: DataLoader, device: torch.devi
     all_probs = []
 
     with torch.no_grad():
-        for context_batch, detail_batch, names_batch in tqdm(loader, desc="Predicting on tiles"):
+        for context_batch, detail_batch, names_batch in tqdm.tqdm(loader, desc="Predicting on tiles"):
             # --- MODIFICA 2: Gestione esplicita dell'input multi-scala ---
             context_batch = context_batch.to(device)
             detail_batch = detail_batch.to(device)

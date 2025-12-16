@@ -96,7 +96,7 @@ def validate_one_epoch(model, val_loader, criterion, device, debug_mode=True):
 # =============================================================================
 def fit(model, train_loader, val_loader, epochs, criterion, optimizer, scaler, device,
         l1_lambda=0, l2_lambda=0, patience=10, evaluation_metric="val_f1", mode='max',
-        restore_best_weights=True, writer=None, verbose=1, experiment_name="", comet_experiment=None, debug_mode=True, local_data_path="."):
+        restore_best_weights=True, writer=None, verbose=1, experiment_name="", comet_experiment=None, debug_mode=True, local_data_path=".", scheduler=None):
     
     training_history = {'train_loss': [], 'val_loss': [], 'train_f1': [], 'val_f1': []}
     
@@ -132,7 +132,7 @@ def fit(model, train_loader, val_loader, epochs, criterion, optimizer, scaler, d
         # --- MODIFICA 4: Logica di salvataggio esplicita e con feedback ---
         current_metric = val_f1 if evaluation_metric == 'val_f1' else val_loss
         is_improvement = (current_metric > best_metric) if mode == 'max' else (current_metric < best_metric)
-        
+        scheduler.step()
         if is_improvement:
             print(f"\n✅ Improvement! {evaluation_metric} changed from {best_metric:.4f} to {current_metric:.4f}.")
             best_metric = current_metric
