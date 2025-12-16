@@ -136,7 +136,11 @@ def fit(model, train_loader, val_loader, epochs, criterion, optimizer, scaler, d
         # --- MODIFICA 4: Logica di salvataggio esplicita e con feedback ---
         current_metric = val_f1 if evaluation_metric == 'val_f1' else val_loss
         is_improvement = (current_metric > best_metric) if mode == 'max' else (current_metric < best_metric)
-        scheduler.step()
+        
+        # Step the scheduler if provided
+        if scheduler is not None:
+            scheduler.step()
+        
         if is_improvement:
             print(f"\n✅ Improvement! {evaluation_metric} changed from {best_metric:.4f} to {current_metric:.4f}.")
             best_metric = current_metric
