@@ -266,6 +266,7 @@ def start_training(model_name="CNN", model_params=None, training_params=None, de
     criterion = get_criterion_from_name(current_train_cfg['criterion_name'], device_obj, class_weights)
 
     optimizer, scaler = get_optimizer_and_scaler(current_train_cfg['optimizer_name'], model, current_train_cfg['learning_rate'], current_train_cfg['l2_lambda'], device_obj)
+    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=current_train_cfg['epochs'])
 
     # TensorBoard
     writer = SummaryWriter(f"tensorboard/{run_id}")
@@ -307,7 +308,8 @@ def start_training(model_name="CNN", model_params=None, training_params=None, de
         patience=current_train_cfg['patience'],
         comet_experiment=comet_experiment,
         debug_mode=debug_mode,
-        local_data_path=local_data_path
+        local_data_path=local_data_path,
+        scheduler=scheduler,
         )
 
     # Update best model if current performance is superior
