@@ -186,7 +186,7 @@ def start_training(
     print("\n--- [FASE 1] Ottenimento delle trasformazioni specifiche di UNI ---")
     try:
         # --- MODIFICA: Usa num_classes da model_params ---
-        dummy_model_for_transforms = mil_model.AttentionMIL(
+        dummy_model_for_transforms = mil_model.AttentionMIL_UNI(
             num_classes=model_params['num_classes']
         )
         uni_transforms = mil_model.get_uni_transforms(dummy_model_for_transforms.backbone)
@@ -219,7 +219,7 @@ def start_training(
             raise ValueError(f"Questo script è configurato solo per 'AttentionMIL_UNI', non '{model_name}'.")
         
         # --- MODIFICA: Usa i parametri da model_params ---
-        model = mil_model.AttentionMIL(
+        model = mil_model.AttentionMIL_UNI(
             num_classes=model_params['num_classes'],
             backbone_name=model_params.get('backbone_name', 'hf-hub:MahmoodLab/UNI2-h'),
             freeze_backbone=model_params.get('freeze_backbone', True),
