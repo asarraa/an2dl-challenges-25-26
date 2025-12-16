@@ -89,12 +89,12 @@ def instantiate_model(model_name, current_model_cfg, data_input_shape, device_ob
         cfg_copy = current_model_cfg.copy()
         if 'input_shape' in cfg_copy:
             del cfg_copy['input_shape']
-        model = models.MultiScaleModel(**cfg_copy)
+        model = models.DualBranchResNet(**cfg_copy)
     # Move model to device BEFORE calling summary (torchsummary requires this)
     model = model.to(device_obj)
 
     # Pass device to torchsummary so it creates input on the correct device
-    summary(model, input_size=data_input_shape, device=str(device_obj.type))
+    #summary(model, input_size=data_input_shape, device=str(device_obj.type))
     #model_graph = draw_graph(model, input_size=(batch_size)+config.input_shape, expand_nested=True, depth=5)
     #model_graph.visual_graph
     return model
