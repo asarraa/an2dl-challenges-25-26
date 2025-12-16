@@ -11,6 +11,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import os
 import argparse
+from sklearn.utils.class_weight import compute_class_weight
 
 # =============================================================================
 # --- 1. DATASET CLASS MULTI-SCALA (CORRETTA) ---
