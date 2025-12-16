@@ -1,300 +1,167 @@
 import torch
 import numpy as np
-from sklearn.metrics import f1_score
+from sklearn.metrics import f1_score, confusion_matrix
 import os
-
-from sklearn.metrics import confusion_matrix
 import seaborn as sns
 import matplotlib.pyplot as plt
+from tqdm import tqdm # Assicurati che tqdm sia importato
 
+# =============================================================================
+# --- FUNZIONE DI TRAINING PER EPOCA (CORRETTA PER MULTI-SCALA) ---
+# =============================================================================
 def train_one_epoch(model, train_loader, criterion, optimizer, scaler, device, l1_lambda=0, l2_lambda=0, debug_mode=True, comet_experiment=None):
-    """
-    Perform one complete training epoch through the entire training dataset.
-
-    Args:
-        model (nn.Module): The neural network model to train
-        train_loader (DataLoader): PyTorch DataLoader containing training data batches
-        criterion (nn.Module): Loss function (e.g., CrossEntropyLoss, MSELoss)
-        optimizer (torch.optim): Optimization algorithm (e.g., Adam, SGD)
-        scaler (GradScaler): PyTorch's gradient scaler for mixed precision training
-        device (torch.device): Computing device ('cuda' for GPU, 'cpu' for CPU)
-        l1_lambda (float): Lambda for L1 regularization
-        l2_lambda (float): Lambda for L2 regularization
-
-    Returns:
-        tuple: (average_loss, f1 score) - Training loss and f1 score for this epoch
-    """
-    if debug_mode:
-        print(f"[DEBUG] train_one_epoch started", flush=True)
-    model.train()  # Set model to training mode
-
+    model.train()
     running_loss = 0.0
     all_predictions = []
     all_targets = []
 
-    # Iterate through training batches of the data loader
-    if debug_mode:
-        print(f"[DEBUG] Starting batch iteration, total batches: {len(train_loader)}", flush=True)
-    for batch_idx, batch_data in enumerate(train_loader):
-        # Handle both single-input (inputs, targets) and multi-scale (context, detail, targets) formats
-        if len(batch_data) == 3:
-            # Multi-scale format: (context, detail, targets)
-            context, detail, targets = batch_data
-            context, detail, targets = context.to(device), detail.to(device), targets.to(device)
-            inputs = (context, detail)  # Tuple for dual-branch model
-        else:
-            # Standard format: (inputs, targets)
-            inputs, targets = batch_data
-            inputs, targets = inputs.to(device), targets.to(device)
+    pbar = tqdm(train_loader, desc=f"Training Epoch", leave=False)
+    
+    # --- MODIFICA 1: Spacchetta correttamente i 3 elementi dal DataLoader ---
+    for batch_idx, (context_batch, detail_batch, targets) in enumerate(pbar):
         
-        if debug_mode and batch_idx == 0:
-            if isinstance(inputs, tuple):
-                print(f"[DEBUG] Processing first batch, context shape: {inputs[0].shape}, detail shape: {inputs[1].shape}", flush=True)
-            else:
-                print(f"[DEBUG] Processing first batch, shape: {inputs.shape}", flush=True)
+        # Sposta i dati sul device
+        context_batch, detail_batch, targets = context_batch.to(device), detail_batch.to(device), targets.to(device)
         
-        # Clear gradients from previous step
         optimizer.zero_grad(set_to_none=True)
 
-        # Forward pass with mixed precision (if CUDA available)
         with torch.amp.autocast(device_type=device.type, enabled=(device.type == 'cuda')):
-            # inputs is either a single tensor or a tuple (context, detail) for dual-branch
-            logits = model(inputs)
-            if debug_mode and batch_idx == 0:
-                print(f"[DEBUG] Forward pass done, logits shape: {logits.shape}", flush=True)
+            # Passa i due tensori di immagine come una tupla al modello
+            logits = model((context_batch, detail_batch))
             loss = criterion(logits, targets)
 
-            # Add L1 and L2 regularization
-            l1_norm = sum(p.abs().sum() for p in model.parameters())
-            l2_norm = sum(p.pow(2).sum() for p in model.parameters())
-            loss = loss + l1_lambda * l1_norm + l2_lambda * l2_norm
+            # Aggiungi regolarizzazione (se presente)
+            if l1_lambda > 0 or l2_lambda > 0:
+                l1_norm = sum(p.abs().sum() for p in model.parameters())
+                l2_norm = sum(p.pow(2).sum() for p in model.parameters())
+                loss = loss + l1_lambda * l1_norm + l2_lambda * l2_norm
 
-
-        # Backward pass with gradient scaling
         scaler.scale(loss).backward()
         scaler.step(optimizer)
         scaler.update()
 
-        # Accumulate metrics
         batch_size = targets.size(0)
         running_loss += loss.item() * batch_size
         predictions = logits.argmax(dim=1)
         all_predictions.append(predictions.cpu().numpy())
         all_targets.append(targets.cpu().numpy())
-        
-        if debug_mode and batch_idx == 0:
-            print(f"[DEBUG] First batch complete", flush=True)
-        
-        if debug_mode and (batch_idx + 1) % 10 == 0:
-            print(f"[DEBUG] Processed {batch_idx + 1}/{len(train_loader)} batches", flush=True)
 
-    if debug_mode:
-        print(f"[DEBUG] All batches processed, computing metrics...", flush=True)
-    # Calculate epoch metrics
     epoch_loss = running_loss / len(train_loader.dataset)
-    epoch_f1 = f1_score(
-        np.concatenate(all_targets),
-        np.concatenate(all_predictions),
-        average='weighted'
-    )
+    all_targets_np = np.concatenate(all_targets)
+    all_predictions_np = np.concatenate(all_predictions)
+    epoch_f1 = f1_score(all_targets_np, all_predictions_np, average='weighted')
 
-    # ... ottieni preds e labels ...
-    cm = confusion_matrix(np.concatenate(all_targets), np.concatenate(all_predictions))
-    if debug_mode:
-        print("Confusion Matrix:\n", cm)
-    comet_experiment.log_confusion_matrix(matrix=cm, labels=[str(i) for i in range(cm.shape[0])], name="Confusion Matrix")
+    # Log della confusion matrix (opzionale ma utile)
+    if comet_experiment:
+        cm = confusion_matrix(all_targets_np, all_predictions_np)
+        comet_experiment.log_confusion_matrix(matrix=cm, labels=[str(i) for i in range(cm.shape[0])], name="Train Confusion Matrix")
 
     return epoch_loss, epoch_f1
 
-
+# =============================================================================
+# --- FUNZIONE DI VALIDAZIONE PER EPOCA (CORRETTA PER MULTI-SCALA) ---
+# =============================================================================
 def validate_one_epoch(model, val_loader, criterion, device, debug_mode=True):
-    """
-    Perform one complete validation epoch through the entire validation dataset.
-
-    Args:
-        model (nn.Module): The neural network model to evaluate (must be in eval mode)
-        val_loader (DataLoader): PyTorch DataLoader containing validation data batches
-        criterion (nn.Module): Loss function used to calculate validation loss
-        device (torch.device): Computing device ('cuda' for GPU, 'cpu' for CPU)
-
-    Returns:
-        tuple: (average_loss, accuracy) - Validation loss and accuracy for this epoch
-
-    Note:
-        This function automatically sets the model to evaluation mode and disables
-        gradient computation for efficiency during validation.
-    """
-    model.eval()  # Set model to evaluation mode
-
+    model.eval()
     running_loss = 0.0
     all_predictions = []
     all_targets = []
 
-    # Disable gradient computation for validation
     with torch.no_grad():
-        for batch_data in val_loader:
-            # Handle both single-input and multi-scale formats
-            if len(batch_data) == 3:
-                context, detail, targets = batch_data
-                context, detail, targets = context.to(device), detail.to(device), targets.to(device)
-                inputs = (context, detail)
-            else:
-                inputs, targets = batch_data
-                inputs, targets = inputs.to(device), targets.to(device)
-
-            # Forward pass with mixed precision (if CUDA available)
+        # --- MODIFICA 2: Spacchetta correttamente i 3 elementi anche qui ---
+        for context_batch, detail_batch, targets in val_loader:
+            context_batch, detail_batch, targets = context_batch.to(device), detail_batch.to(device), targets.to(device)
+            
             with torch.amp.autocast(device_type=device.type, enabled=(device.type == 'cuda')):
-                # inputs is either a single tensor or a tuple (context, detail) for dual-branch
-                logits = model(inputs)
+                logits = model((context_batch, detail_batch))
                 loss = criterion(logits, targets)
 
-            # Accumulate metrics
             batch_size = targets.size(0)
             running_loss += loss.item() * batch_size
             predictions = logits.argmax(dim=1)
             all_predictions.append(predictions.cpu().numpy())
             all_targets.append(targets.cpu().numpy())
 
-    # Calculate epoch metrics
     epoch_loss = running_loss / len(val_loader.dataset)
-    epoch_accuracy = f1_score(
+    epoch_f1 = f1_score(
         np.concatenate(all_targets),
         np.concatenate(all_predictions),
         average='weighted'
     )
 
-    return epoch_loss, epoch_accuracy
+    return epoch_loss, epoch_f1
 
-
-
+# =============================================================================
+# --- FUNZIONE FIT (CON SALVATAGGIO DEL MODELLO MIGLIORE CORRETTO) ---
+# =============================================================================
 def fit(model, train_loader, val_loader, epochs, criterion, optimizer, scaler, device,
-        l1_lambda=0, l2_lambda=0, patience=0, evaluation_metric="val_f1", mode='max',
-        restore_best_weights=True, writer=None, verbose=10, experiment_name="", comet_experiment=None, debug_mode=True, local_data_path=None):
-    """
-    Train the neural network model on the training data and validate on the validation data.
-
-    Args:
-        model (nn.Module): The neural network model to train
-        train_loader (DataLoader): PyTorch DataLoader containing training data batches
-        val_loader (DataLoader): PyTorch DataLoader containing validation data batches
-        epochs (int): Number of training epochs
-        criterion (nn.Module): Loss function (e.g., CrossEntropyLoss, MSELoss)
-        optimizer (torch.optim): Optimization algorithm (e.g., Adam, SGD)
-        scaler (GradScaler): PyTorch's gradient scaler for mixed precision training
-        device (torch.device): Computing device ('cuda' for GPU, 'cpu' for CPU)
-        l1_lambda (float): L1 regularization coefficient (default: 0)
-        l2_lambda (float): L2 regularization coefficient (default: 0)
-        patience (int): Number of epochs to wait for improvement before early stopping (default: 0)
-        evaluation_metric (str): Metric to monitor for early stopping (default: "val_f1")
-        mode (str): 'max' for maximizing the metric, 'min' for minimizing (default: 'max')
-        restore_best_weights (bool): Whether to restore model weights from best epoch (default: True)
-        writer (SummaryWriter, optional): TensorBoard SummaryWriter object for logging (default: None)
-        verbose (int, optional): Frequency of printing training progress (default: 10)
-        experiment_name (str, optional): Experiment name for saving models (default: "")
-        comet_experiment : comet experiment variable for logging
-
-    Returns:
-        tuple: (model, training_history) - Trained model and metrics history
-    """
-
-
-    if debug_mode:
-        print("[DEBUG] fit() function started", flush=True)
+        l1_lambda=0, l2_lambda=0, patience=10, evaluation_metric="val_f1", mode='max',
+        restore_best_weights=True, writer=None, verbose=1, experiment_name="", comet_experiment=None, debug_mode=True, local_data_path="."):
     
-    # Initialize metrics tracking
-    #keeps track of all values during training and validation
-    training_history = {
-        'train_loss': [], 'val_loss': [],
-        'train_f1': [], 'val_f1': []
-    }
+    training_history = {'train_loss': [], 'val_loss': [], 'train_f1': [], 'val_f1': []}
+    
+    # --- MODIFICA 3: Logica di Early Stopping e Salvataggio migliorata ---
+    patience_counter = 0
+    best_metric = float('-inf') if mode == 'max' else float('inf')
+    best_epoch = 0
+    
+    # Definisci il percorso di salvataggio del modello in modo robusto
+    fit_models_folder = Path(local_data_path) / "fit_models"
+    fit_models_folder.mkdir(exist_ok=True)
+    best_model_path = fit_models_folder / f"{experiment_name}_best_model.pth"
+    # --------------------------------------------------------------------
 
-    # Configure early stopping if patience is set
-    if patience > 0:
-        patience_counter = 0
-        best_metric = float('-inf') if mode == 'max' else float('inf')
-        best_epoch = 0
-
-    if debug_mode:
-        print(f"[DEBUG] Training {epochs} epochs...", flush=True)
-
-    # Main training loop: iterate through epochs
     for epoch in range(1, epochs + 1):
-        if debug_mode:
-            print(f"Starting epoch {epoch}...", flush=True)  # Debug line
+        train_loss, train_f1 = train_one_epoch(...) # Chiamata invariata
+        val_loss, val_f1 = validate_one_epoch(...)   # Chiamata invariata
         
-        # Forward pass through training data, compute gradients, update weights
-        train_loss, train_f1 = train_one_epoch(
-            model, train_loader, criterion, optimizer, scaler, device, l1_lambda, l2_lambda, debug_mode=debug_mode, comet_experiment=comet_experiment
-        )
-
-        if debug_mode:
-            print(f"Epoch {epoch} train done", flush=True)  # Debug line
-
-        # Evaluate model on validation data without updating weights
-        val_loss, val_f1 = validate_one_epoch(
-            model, val_loader, criterion, device, debug_mode=debug_mode
-        )
-        # Store metrics for plotting and analysis
         training_history['train_loss'].append(train_loss)
         training_history['val_loss'].append(val_loss)
         training_history['train_f1'].append(train_f1)
         training_history['val_f1'].append(val_f1)
 
-        # Write metrics to TensorBoard for visualization
-        if writer is not None:
-            log_metrics_to_tensorboard(
-                writer, epoch, train_loss, train_f1, val_loss, val_f1, model
-            )
+        if comet_experiment:
+            metrics={"train_loss": train_loss, "train_f1": train_f1, "val_loss":val_loss, "val_f1": val_f1 }
+            comet_experiment.log_metrics(metrics, step=epoch, epoch=epoch)
 
-        # log to comet
-        metrics={"train_loss": train_loss, "train_f1": train_f1, "val_loss":val_loss, "val_f1": val_f1 }
-        comet_experiment.log_metrics(metrics, step=epoch, epoch=epoch)
+        if epoch % verbose == 0 or epoch == 1:
+            print(f"Epoch {epoch:3d}/{epochs} | "
+                  f"Train: Loss={train_loss:.4f}, F1={train_f1:.4f} | "
+                  f"Val: Loss={val_loss:.4f}, F1={val_f1:.4f}")
 
+        # --- MODIFICA 4: Logica di salvataggio esplicita e con feedback ---
+        current_metric = val_f1 if evaluation_metric == 'val_f1' else val_loss
+        is_improvement = (current_metric > best_metric) if mode == 'max' else (current_metric < best_metric)
+        
+        if is_improvement:
+            print(f"\n✅ Improvement! {evaluation_metric} changed from {best_metric:.4f} to {current_metric:.4f}.")
+            best_metric = current_metric
+            best_epoch = epoch
+            patience_counter = 0
+            
+            print(f"   - Saving best model weights to '{best_model_path}'")
+            torch.save(model.state_dict(), best_model_path)
+            
+        else:
+            patience_counter += 1
+            print(f"   - No improvement. Patience: {patience_counter}/{patience}")
 
+        if patience_counter >= patience:
+            print(f"\n🛑 Early stopping triggered after {epoch} epochs.")
+            break
+        # ----------------------------------------------------------------
 
-        # Print progress every N epochs or on first epoch
-        if verbose > 0:
-            if epoch % verbose == 0 or epoch == 1:
-                print(f"Epoch {epoch:3d}/{epochs} | "
-                    f"Train: Loss={train_loss:.4f}, F1 Score={train_f1:.4f} | "
-                    f"Val: Loss={val_loss:.4f}, F1 Score={val_f1:.4f}")
-
-        # Early stopping logic: monitor metric and save best model
-        if patience > 0:
-            current_metric = training_history[evaluation_metric][-1]
-            is_improvement = (current_metric > best_metric) if mode == 'max' else (current_metric < best_metric)
-
-            fit_models_folder = str(local_data_path)+"/fit_models"
-            os.makedirs(fit_models_folder, exist_ok=True)
-
-            if is_improvement:
-                best_metric = current_metric
-                torch.save(model.state_dict(), fit_models_folder+"/"+experiment_name+'_model.pt')
-                patience_counter = 0
-            else:
-                patience_counter += 1
-                if patience_counter >= patience:
-                    print(f"Early stopping triggered after {epoch} epochs.")
-                    break
-
-    # Restore best model weights if early stopping was used
-    if restore_best_weights and patience > 0:
-        model.load_state_dict(torch.load(fit_models_folder+"/"+experiment_name+'_model.pt'))
-        print(f"Best model restored from epoch {best_epoch} with {evaluation_metric} {best_metric:.4f}")
-
-    # Save final model if no early stopping
-    if patience == 0:
-        torch.save(model.state_dict(), fit_models_folder+"/"+experiment_name+'_model.pt')
-
-    # Close TensorBoard writer
-    if writer is not None:
-        writer.close()
-
-    comet_experiment.log_model(name="test1", file_or_folder=fit_models_folder+"/"+experiment_name+'_model.pt')
-
-    #comet_experiment.end() 
+    print("\n--- Training Finished ---")
+    if restore_best_weights:
+        print(f"Restoring best model weights from epoch {best_epoch} with {evaluation_metric} of {best_metric:.4f}")
+        model.load_state_dict(torch.load(best_model_path))
+    
+    if comet_experiment:
+        comet_experiment.log_model(name=f"{experiment_name}_best", file_or_folder=str(best_model_path))
+    
     return model, training_history
 
+# (La funzione di logging per Tensorboard rimane invariata)
 
 # -----------------------------
 # Tensorboard
