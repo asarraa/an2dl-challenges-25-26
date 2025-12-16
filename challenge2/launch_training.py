@@ -143,7 +143,7 @@ def get_optimizer_and_scaler(optimizer_name, model, learning_rate, l2_lambda, de
     scaler = torch.amp.GradScaler(enabled=(device_obj.type == 'cuda'))
     return optimizer, scaler
 
-def start_training(model_name="CNN", model_params=None, training_params=None, device=None, data_input_shape=None, debug_mode=False, local_data_path=None, class_weights=None, data_path=None, batch_size=128):
+def start_training(model_name="CNN", model_params=None, training_params=None, device=None, data_input_shape=None, debug_mode=False, local_data_path=None, class_weights=None, data_path=None, batch_size=128, pretrained_model_path=None):
     """
     Args:
         model_name (str): "CNN" or "EfficientNet"
@@ -275,6 +275,10 @@ def start_training(model_name="CNN", model_params=None, training_params=None, de
     if debug_mode:
         print("[DEBUG] Model instantiated successfully", flush=True) 
     
+    if pretrained_model_path is not None:
+        print(f"Loading pretrained model from {pretrained_model_path}...", flush=True)
+        model.load_state_dict(torch.load(pretrained_model_path, map_location=device_obj, weights_only=False))
+        print("Pretrained model loaded successfully.", flush=True)
     # Get criterion
     criterion = get_criterion_from_name(current_train_cfg['criterion_name'], device_obj, class_weights)
 
