@@ -1,7 +1,7 @@
 import config
 import torch
 import pandas as pd
-from lazy_loaders import _resolve_paths, get_test_loaders
+from lazy_loaders import _resolve_paths, get_test_loaders, TestImageDataset
 import os
 from pathlib import Path
 from typing import Dict, Optional, Tuple, List
@@ -11,33 +11,58 @@ import numpy as np
 import torch.nn.functional as F
 
 
-def make_inference(loader, device, input_shape, model_path, model_name, experiment_id, base_path, inference_type="weighted_majority_vote"):
+def make_inference(
+    loader=None,
+    device: Optional[torch.device] = None,
+    input_shape: Optional[Tuple[int, int, int]] = None,
+    model_path: Optional[Path] = None,
+    model_name: Optional[str] = None,
+    experiment_id: Optional[str] = None,
+    base_path: Optional[str] = None,
+    inference_type: str = "weighted_majority_vote",
+    add_mask_channel: bool = False,
+    batch_size: Optional[int] = None,
+    retry_on_worker_error: bool = True,
+):
     """
     Esegue inferenza e aggregazione.
     inference_type: "weighted_majority_vote" (Media pesata) o "mil" (Max Pooling).
+    loader: se None viene creato automaticamente dal CSV di test.
     """
-    
+    base_path = Path(base_path) if base_path is not None else Path(".")
     print(f"[INFO] Starting inference with mode: {inference_type}")
     
-    inv_label_map = {v: k for k, v in config.LABEL_MAP.items()}
+    # 0. Label map dinamica (ricavata dal train CSV se presente)
+    inv_label_map, label_map = prepare_label_maps(base_path)
+    num_classes = len(label_map)
 
-    _, _, csv_path = _resolve_paths(base_path=base_path, add_mask_channel=False, is_test=True)
-
-    # Read CSV metadata into memory
+    # 1. Carica metadata test
+    _, _, csv_path = _resolve_paths(base_path=base_path, add_mask_channel=add_mask_channel, is_test=True)
     df_test = pd.read_csv(csv_path)
-
     if "weight" not in df_test.columns:
         print("[WARNING] Colonna 'weight' non trovata in test_patches.csv. Uso peso 1.0 per tutti.")
         df_test["weight"] = 1.0
 
-    # Preload checkpoint metadata
+    # 2. DataLoader (se non fornito o serve fallback)
+    if loader is None:
+        bs = batch_size or config.LOADER_PARAMS.get("batch_size", 64)
+        loader, inferred_shape = get_test_loaders(
+            add_mask_channel=add_mask_channel,
+            batch_size=bs,
+            base_path=base_path,
+        )
+        if input_shape is None:
+            input_shape = inferred_shape
+    if input_shape is None:
+        raise ValueError("input_shape must be provided (or inferibile dal loader) for make_inference.")
+
+    # 3. Carica modello
     ckpt, state_dict = load_checkpoint(model_path, map_location="cpu")
     ckpt_channels = infer_conv1_in_channels(state_dict)
-
     model = load_model(
-        model_path,
+        model_path=model_path,
         input_shape=input_shape,
-        num_classes=len(config.LABEL_MAP),
+        num_classes=num_classes,
         model_name=model_name,
         state_dict=state_dict,
         ckpt=ckpt,
@@ -45,25 +70,29 @@ def make_inference(loader, device, input_shape, model_path, model_name, experime
     )
     model.to(device)
     
-    # 1. Otteniamo le probabilità per ogni tile
-    num_classes = len(config.LABEL_MAP)
-    tile_preds = predict2(model, loader, device, num_classes)
+    # 4. Probabilità per tile (con fallback se i worker crashano)
     prob_cols = [f"prob_{i}" for i in range(num_classes)]
+    try:
+        tile_preds = predict2(model, loader, device, num_classes)
+    except RuntimeError as e:
+        if retry_on_worker_error and "DataLoader worker" in str(e):
+            print("[WARNING] DataLoader workers failed. Rebuilding loader with num_workers=0 for a safe retry...")
+            bs = batch_size or config.LOADER_PARAMS.get("batch_size", 64)
+            loader = build_safe_test_loader(base_path, add_mask_channel, bs, num_workers=0)
+            tile_preds = predict2(model, loader, device, num_classes)
+        else:
+            raise
 
-    # 2. Scegliamo la strategia di aggregazione (Bag-level inference)
+    # 5. Bag-level aggregation
     if inference_type == "weighted_majority_vote":
-        # Strategia attuale: Media pesata delle probabilità
         submission, slide_map = weighted_mean_aggregation(tile_preds, df_test, prob_cols, inv_label_map)
-    
     elif inference_type == "mil":
-        # Strategia MIL: Max Pooling (il tile più forte decide per la slide)
         submission, slide_map = mil_aggregation(tile_preds, df_test, prob_cols, inv_label_map)
-        
     else:
         raise ValueError(f"Inference type '{inference_type}' non supportato. Usa 'weighted_majority_vote' o 'mil'.")
 
-    # Salvataggio
-    output = Path(base_path+"/"+experiment_id+"_submission.csv")
+    # 6. Salvataggio
+    output = Path(base_path / f"{experiment_id}_submission.csv")
     output.parent.mkdir(parents=True, exist_ok=True)
     submission.to_csv(output, index=False)
     print(f"[INFO] Saved submission to {output}")
@@ -275,6 +304,50 @@ def infer_model_from_state_dict(state_dict: dict) -> Optional[str]:
 
 
 # ------------------------------
+# Label map & loader helpers
+# ------------------------------
+
+def prepare_label_maps(base_path: Path) -> Tuple[Dict[int, str], Dict[str, int]]:
+    """
+    Ricava label_map/inv_map dal train CSV se disponibile, altrimenti usa config.LABEL_MAP.
+    """
+    train_csv = base_path / "train" / "train_patches.csv"
+    if train_csv.exists():
+        df_train = pd.read_csv(train_csv)
+        unique_labels = sorted(df_train["label"].unique())
+        label_map = {lbl: idx for idx, lbl in enumerate(unique_labels)}
+        inv_label_map = {v: k for k, v in label_map.items()}
+        return inv_label_map, label_map
+    # fallback a config
+    inv_label_map = {v: k for k, v in config.LABEL_MAP.items()}
+    return inv_label_map, config.LABEL_MAP.copy()
+
+
+def build_safe_test_loader(base_path: Path, add_mask_channel: bool, batch_size: int, num_workers: int = 0) -> DataLoader:
+    """
+    DataLoader semplificato per il test, utile come fallback se i worker crashano.
+    """
+    images_dir, masks_dir, csv_path = _resolve_paths(base_path=base_path, add_mask_channel=add_mask_channel, is_test=True)
+    df = pd.read_csv(csv_path)
+    ds = TestImageDataset(
+        filenames=df["sample_index"],
+        images_dir=images_dir,
+        masks_dir=masks_dir,
+        add_mask_channel=add_mask_channel,
+    )
+    pin_memory = torch.cuda.is_available()
+    return DataLoader(
+        ds,
+        batch_size=batch_size,
+        shuffle=False,
+        drop_last=False,
+        num_workers=num_workers,
+        pin_memory=pin_memory,
+        persistent_workers=False,
+    )
+
+
+# ------------------------------
 # Ensemble Helpers
 # ------------------------------
 
@@ -284,6 +357,7 @@ def _run_single_model_inference(
     input_shape: Tuple[int, int, int],
     model_path: Path,
     model_name: Optional[str] = None,
+    num_classes: Optional[int] = None,
 ) -> pd.DataFrame:
     """
     Runs tile-level inference for a single checkpoint and returns probabilities per class.
@@ -293,7 +367,7 @@ def _run_single_model_inference(
     model = load_model(
         model_path=model_path,
         input_shape=input_shape,
-        num_classes=len(config.LABEL_MAP),
+        num_classes=num_classes or len(config.LABEL_MAP),
         model_name=model_name,
         state_dict=state_dict,
         ckpt=ckpt,
@@ -379,7 +453,10 @@ def make_ensemble_inference(
     if len(model_names) != len(model_paths):
         raise ValueError("model_names length must match model_paths length.")
 
-    inv_label_map = {v: k for k, v in config.LABEL_MAP.items()}
+    base_path_obj = Path(base_path) if base_path is not None else Path(".")
+    inv_label_map, label_map = prepare_label_maps(base_path_obj)
+    num_classes = len(label_map)
+    prob_cols = [f"prob_{i}" for i in range(num_classes)]
     _, _, csv_path = _resolve_paths(base_path=base_path, add_mask_channel=False, is_test=True)
     meta_df = pd.read_csv(csv_path)
     if "weight" not in meta_df.columns:
@@ -394,12 +471,12 @@ def make_ensemble_inference(
             input_shape=input_shape,
             model_path=Path(path),
             model_name=name,
+            num_classes=num_classes,
         )
         preds["model_id"] = name or Path(path).stem
         tile_predictions.append(preds)
 
     aggregated_tiles = aggregate_patch_votes(tile_predictions, vote_strategy=patch_vote, model_weights=model_weights)
-    prob_cols = [f"prob_{i}" for i in range(len(config.LABEL_MAP))]
 
     if inference_type == "weighted_majority_vote":
         submission, slide_map = weighted_mean_aggregation(aggregated_tiles, meta_df, prob_cols, inv_label_map)
