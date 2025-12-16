@@ -138,7 +138,19 @@ def start_training(model_name="CNN", model_params=None, training_params=None, de
         model_name (str): "CNN" or "EfficientNet"
         model_params (dict): Dictionary of overrides for the model architecture.
         training_params (dict): Dictionary of overrides for training (lr, epochs, etc).
+        data_path (str or Path): Path to the preprocessed data folder. Required.
     """
+    from pathlib import Path
+    
+    # Validate data_path is provided
+    if data_path is None:
+        raise ValueError(
+            "data_path is required! Please provide the path to your preprocessed data folder.\n"
+            "Example: data_path='/kaggle/working/an2dl-challenges-25-26/challenge2/data/preprocessed/preprocess_v1'"
+        )
+    
+    # Convert to Path if string
+    data_path = Path(data_path)
 
     train_loader, val_loader, _, class_weights = multiscale_pipeline.get_multiscale_loaders(
         base_path=data_path,
