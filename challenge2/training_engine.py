@@ -35,17 +35,33 @@ def train_one_epoch(model, train_loader, criterion, optimizer, scaler, device, l
     # Iterate through training batches of the data loader
     if debug_mode:
         print(f"[DEBUG] Starting batch iteration, total batches: {len(train_loader)}", flush=True)
-    for batch_idx, (inputs, targets) in enumerate(train_loader):
+    for batch_idx, batch_data in enumerate(train_loader):
+        # Handle both single-input (inputs, targets) and multi-scale (context, detail, targets) formats
+        if len(batch_data) == 3:
+            # Multi-scale format: (context, detail, targets)
+            context, detail, targets = batch_data
+            context, detail, targets = context.to(device), detail.to(device), targets.to(device)
+            inputs = (context, detail)  # Tuple for dual-branch model
+        else:
+            # Standard format: (inputs, targets)
+            inputs, targets = batch_data
+            inputs, targets = inputs.to(device), targets.to(device)
+        
         if debug_mode and batch_idx == 0:
-            print(f"[DEBUG] Processing first batch, shape: {inputs.shape}", flush=True)
-        # Move data to device (GPU/CPU)
-        inputs, targets = inputs.to(device), targets.to(device)
+            if isinstance(inputs, tuple):
+                print(f"[DEBUG] Processing first batch, context shape: {inputs[0].shape}, detail shape: {inputs[1].shape}", flush=True)
+            else:
+                print(f"[DEBUG] Processing first batch, shape: {inputs.shape}", flush=True)
+        
         # Clear gradients from previous step
         optimizer.zero_grad(set_to_none=True)
 
         # Forward pass with mixed precision (if CUDA available)
         with torch.amp.autocast(device_type=device.type, enabled=(device.type == 'cuda')):
-            logits = model(inputs)
+            if isinstance(inputs, tuple):
+                logits = model(inputs[0], inputs[1])  # Dual-branch forward
+            else:
+                logits = model(inputs)  # Standard forward
             if debug_mode and batch_idx == 0:
                 print(f"[DEBUG] Forward pass done, logits shape: {logits.shape}", flush=True)
             loss = criterion(logits, targets)
@@ -62,7 +78,8 @@ def train_one_epoch(model, train_loader, criterion, optimizer, scaler, device, l
         scaler.update()
 
         # Accumulate metrics
-        running_loss += loss.item() * inputs.size(0)
+        batch_size = targets.size(0)
+        running_loss += loss.item() * batch_size
         predictions = logits.argmax(dim=1)
         all_predictions.append(predictions.cpu().numpy())
         all_targets.append(targets.cpu().numpy())
@@ -117,17 +134,27 @@ def validate_one_epoch(model, val_loader, criterion, device, debug_mode=True):
 
     # Disable gradient computation for validation
     with torch.no_grad():
-        for inputs, targets in val_loader:
-            # Move data to device
-            inputs, targets = inputs.to(device), targets.to(device)
+        for batch_data in val_loader:
+            # Handle both single-input and multi-scale formats
+            if len(batch_data) == 3:
+                context, detail, targets = batch_data
+                context, detail, targets = context.to(device), detail.to(device), targets.to(device)
+                inputs = (context, detail)
+            else:
+                inputs, targets = batch_data
+                inputs, targets = inputs.to(device), targets.to(device)
 
             # Forward pass with mixed precision (if CUDA available)
             with torch.amp.autocast(device_type=device.type, enabled=(device.type == 'cuda')):
-                logits = model(inputs)
+                if isinstance(inputs, tuple):
+                    logits = model(inputs[0], inputs[1])
+                else:
+                    logits = model(inputs)
                 loss = criterion(logits, targets)
 
             # Accumulate metrics
-            running_loss += loss.item() * inputs.size(0)
+            batch_size = targets.size(0)
+            running_loss += loss.item() * batch_size
             predictions = logits.argmax(dim=1)
             all_predictions.append(predictions.cpu().numpy())
             all_targets.append(targets.cpu().numpy())
