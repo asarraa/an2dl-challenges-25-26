@@ -110,17 +110,63 @@ def get_multiscale_loaders(
     print(f"Calculated class weights for training set: {class_weights.numpy()}")
 
     # --- Augmentations ---
-    # (codice delle augmentation invariato)
-    train_augmentation_context = ...
-    train_augmentation_detail = ...
-    val_augmentation = ...
+    # Context branch: resized to 224x224 (from 768px tiles)
+    train_augmentation_context = transforms.Compose([
+        transforms.Resize((224, 224)),
+        transforms.RandomHorizontalFlip(p=0.5),
+        transforms.RandomVerticalFlip(p=0.5),
+        transforms.RandomRotation(degrees=15),
+        transforms.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.1, hue=0.05),
+    ])
+    
+    # Detail branch: resized to 224x224 (from 256px tiles)
+    train_augmentation_detail = transforms.Compose([
+        transforms.Resize((224, 224)),
+        transforms.RandomHorizontalFlip(p=0.5),
+        transforms.RandomVerticalFlip(p=0.5),
+        transforms.RandomRotation(degrees=15),
+        transforms.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.1, hue=0.05),
+    ])
+    
+    # Validation: only resize, no augmentation
+    val_augmentation = transforms.Compose([
+        transforms.Resize((224, 224)),
+    ])
     
     # --- Create Datasets & DataLoaders ---
-    # (codice per creare train_ds, val_ds, train_loader, val_loader invariato)
-    train_ds = ...
-    val_ds = ...
-    train_loader = ...
-    val_loader = ...
+    train_ds = MultiScaleTileDataset(
+        train_df, 
+        train_val_dir, 
+        transform_context=train_augmentation_context, 
+        transform_detail=train_augmentation_detail, 
+        is_test=False
+    )
+    val_ds = MultiScaleTileDataset(
+        val_df, 
+        train_val_dir, 
+        transform_context=val_augmentation, 
+        transform_detail=val_augmentation, 
+        is_test=False
+    )
+    
+    num_workers = min(os.cpu_count() or 2, 8)
+    train_loader = DataLoader(
+        train_ds, 
+        batch_size=batch_size, 
+        shuffle=True, 
+        num_workers=num_workers, 
+        pin_memory=True,
+        drop_last=True
+    )
+    val_loader = DataLoader(
+        val_ds, 
+        batch_size=batch_size, 
+        shuffle=False, 
+        num_workers=num_workers, 
+        pin_memory=True
+    )
+    
+    print(f"Created DataLoaders: train={len(train_loader)} batches, val={len(val_loader)} batches")
     
     # --- Determina Input Shape ---
     # Per il modello a doppio ramo, l'input shape non è una singola tupla.
