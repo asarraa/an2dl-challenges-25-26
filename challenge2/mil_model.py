@@ -15,7 +15,8 @@ class AttentionMIL_UNI(nn.Module):
         num_classes: int, 
         freeze_backbone: bool = True,
         embedding_dim: int = 512, # Dimensione intermedia del classificatore
-        dropout_rate: float = 0.5
+        dropout_rate: float = 0.5,
+        **kwargs
     ):
         super().__init__()
         
